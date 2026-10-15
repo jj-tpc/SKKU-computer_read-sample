@@ -9,21 +9,33 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import ppt_reader.app as app_mod  # noqa: E402
 from ppt_reader.link import PptState  # noqa: E402
-from ppt_reader.tts import Voice  # noqa: E402
+from ppt_reader.tts import AudioOutput, Voice  # noqa: E402
 
 SAMPLE = Path(__file__).resolve().parent.parent / "sample" / "sample_presentation.pptx"
+SPEAKERS = AudioOutput("dev-speakers", "스피커(Realtek)")
+EARPHONES = AudioOutput("dev-earphones", "헤드폰(Shokz)")
 
 
 class FakeSpeaker:
+    connected = [SPEAKERS, EARPHONES]
+
     def __init__(self, on_event):
-        self.spoken = []  # (text, tag)
+        self.spoken = []  # (text, tag, voice_id)
+        self.outputs_used = []
         self.stops = 0
 
     def voices(self):
         return [Voice("en", "English", "en_US"), Voice("ko", "Korean", "ko_KR")]
 
-    def speak(self, text, voice_id=None, speed=1.0, tag=None):
+    def outputs(self):
+        return list(self.connected)
+
+    def default_output(self):
+        return SPEAKERS
+
+    def speak(self, text, voice_id=None, speed=1.0, tag=None, output_id=None):
         self.spoken.append((text, tag, voice_id))
+        self.outputs_used.append(output_id)
 
     def stop(self):
         self.stops += 1
@@ -43,20 +55,27 @@ class FakeLink:
         pass
 
 
+def make_app():
+    try:
+        root = tk.Tk()
+    except tk.TclError:
+        pytest.skip("화면(디스플레이)이 없는 환경")
+    root.withdraw()
+    return app_mod.App(root, str(SAMPLE))
+
+
 @pytest.fixture
 def app(monkeypatch, tmp_path):
     if not SAMPLE.exists():
         pytest.skip("python tools/make_sample.py 를 먼저 실행하세요")
     monkeypatch.setattr(app_mod, "Speaker", FakeSpeaker)
     monkeypatch.setattr(app_mod, "SETTINGS_FILE", tmp_path / "settings.json")
-    try:
-        root = tk.Tk()
-    except tk.TclError:
-        pytest.skip("화면(디스플레이)이 없는 환경")
-    root.withdraw()
-    a = app_mod.App(root, str(SAMPLE))
+    a = make_app()
     yield a
-    root.destroy()
+    try:
+        a.root.destroy()
+    except tk.TclError:
+        pass  # 테스트 안에서 이미 닫음
 
 
 def finish(a):
@@ -126,6 +145,27 @@ def test_powerpoint_follow(app):
     app.read_current()
     app._on_ppt_state(PptState("edit", 1, path))  # 쇼를 끝내면 읽기 멈춤
     assert app.reading is None
+
+
+def test_output_device(app, monkeypatch):
+    labels = app.output_box.cget("values")
+    assert labels[0] == "시스템 기본 장치 (지금: 스피커(Realtek))" and app.output_var.get() == labels[0]
+    app.read_current()
+    assert app.speaker.outputs_used[-1] is None  # 기본: 운영체제의 기본 장치
+
+    app.output_var.set("헤드폰(Shokz)")
+    app._on_output_change()
+    app.stop()
+    app.read_current()
+    assert app.speaker.outputs_used[-1] == "dev-earphones"
+
+    app.quit()  # 고른 장치는 다음 실행 때도 유지된다
+    monkeypatch.setattr(FakeSpeaker, "connected", [SPEAKERS])  # 이어폰 연결이 끊긴 채로 다시 실행
+    b = make_app()
+    assert b.output_var.get() == "헤드폰(Shokz) (연결 안 됨 - 기본 장치로 읽음)"
+    b.read_current()
+    assert b.speaker.outputs_used[-1] == "dev-earphones"  # 다시 연결되면 이어폰으로, 그 전엔 엔진이 기본 장치로
+    b.quit()
 
 
 def test_powerpoint_unknown_file(app):

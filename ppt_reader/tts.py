@@ -2,6 +2,7 @@
 
 - Windows: SAPI (pywin32로 SAPI.SpVoice COM 객체 사용)
 - macOS:   `say` 명령
+출력 장치(스피커, 이어폰 등)를 골라서 읽을 수 있다.
 """
 from __future__ import annotations
 
@@ -29,6 +30,12 @@ class Voice:
     @property
     def is_korean(self) -> bool:
         return self.lang.lower().startswith("ko")
+
+
+@dataclass
+class AudioOutput:
+    id: str    # Windows: SAPI 오디오 출력 토큰 Id, macOS: 장치 이름
+    name: str  # 예: "헤드폰(OpenRun Pro 2 by Shokz)", "MacBook Pro Speakers"
 
 
 # ---------------------------------------------------------------- Windows (SAPI)
@@ -69,6 +76,18 @@ class _SapiEngine:
                 found.append(Voice(tok.Id, name, _lcid_to_locale(tok.GetAttribute("Language"))))
         return found
 
+    @staticmethod
+    def outputs() -> list[AudioOutput]:
+        import win32com.client
+
+        tokens = win32com.client.Dispatch("SAPI.SpVoice").GetAudioOutputs()
+        return [AudioOutput(t.Id, t.GetDescription()) for t in (tokens.Item(i) for i in range(tokens.Count))]
+
+    @classmethod
+    def default_output(cls) -> AudioOutput | None:
+        endpoint = _default_render_endpoint()
+        return next((o for o in cls.outputs() if endpoint and _is_endpoint(o.id, endpoint)), None)
+
     def init_thread(self):
         import pythoncom
         import win32com.client
@@ -77,9 +96,25 @@ class _SapiEngine:
         self._sp = win32com.client.Dispatch("SAPI.SpVoice")
         self._default_voice = self._sp.Voice
 
-    def start(self, text: str, voice_id: str | None, speed: float):
+    def _set_output(self, output_id: str | None):
+        # SAPI는 Windows에서 기본 출력 장치를 바꿔도 따라가지 않고 목록의 첫 장치(보통 내장 스피커)로
+        # 읽는다. 그래서 고른 장치가 없거나 연결이 끊겼으면 Windows의 지금 기본 장치를 찾아 직접 지정한다.
+        tokens = self._sp.GetAudioOutputs()
+        tokens = [tokens.Item(i) for i in range(tokens.Count)]
+        for want in (output_id, _default_render_endpoint()):
+            tok = next((t for t in tokens if want and _is_endpoint(t.Id, want)), None)
+            if tok is not None:
+                if self._sp.AudioOutput.Id != tok.Id:
+                    self._sp.AudioOutput = tok
+                return
+
+    def start(self, text: str, voice_id: str | None, speed: float, output_id: str | None = None):
         import win32com.client
 
+        try:
+            self._set_output(output_id)
+        except Exception:
+            pass  # 장치를 못 바꾸면 SAPI가 쓰던 장치로 읽는다
         self._sp.Voice = self._default_voice
         if voice_id:
             try:
@@ -117,6 +152,49 @@ def _lcid_to_locale(attr: str) -> str:
     return locale.windows_locale.get(lcid, "")
 
 
+def _is_endpoint(token_id: str, endpoint: str) -> bool:
+    # SAPI 출력 토큰 Id는 "...\MMAudioOut\{0.0.0.00000000}.{GUID}"처럼 장치 ID로 끝난다.
+    return token_id.lower().endswith(endpoint.lower())
+
+
+def _default_render_endpoint() -> str | None:
+    """Windows 소리 설정의 '기본 출력 장치' ID. 예: "{0.0.0.00000000}.{ced7d08c-...}"
+
+    pywin32에는 이 기능(IMMDeviceEnumerator)이 없어서 ctypes로 COM 함수 표를 직접 부른다.
+    """
+    import ctypes
+    from ctypes import POINTER, byref, c_void_p, c_wchar_p
+
+    ole32 = ctypes.OleDLL("ole32")
+    ole32.CoTaskMemFree.restype = None  # 반환값이 없는 함수라 HRESULT 검사를 하지 않게 한다
+
+    def guid(text: str):
+        g = (ctypes.c_byte * 16)()
+        ole32.CLSIDFromString(text, byref(g))
+        return g
+
+    def method(obj, index: int, *argtypes, restype=ctypes.HRESULT):
+        vtbl = ctypes.cast(obj, POINTER(POINTER(c_void_p))).contents
+        return ctypes.WINFUNCTYPE(restype, c_void_p, *argtypes)(vtbl[index])
+
+    enum, dev, dev_id = c_void_p(), c_void_p(), c_wchar_p()
+    try:
+        ole32.CoCreateInstance(byref(guid("{BCDE0395-E52F-467C-8E3D-C4579291692E}")), None, 1,  # MMDeviceEnumerator
+                               byref(guid("{A95664D2-9614-4F35-A746-DE8DB63617E6}")), byref(enum))
+        # IMMDeviceEnumerator::GetDefaultAudioEndpoint(eRender=0, eConsole=0, &device)
+        method(enum, 4, ctypes.c_int, ctypes.c_int, POINTER(c_void_p))(enum, 0, 0, byref(dev))
+        method(dev, 5, POINTER(c_wchar_p))(dev, byref(dev_id))  # IMMDevice::GetId
+        return dev_id.value
+    except OSError:
+        return None
+    finally:
+        if dev_id.value is not None:
+            ole32.CoTaskMemFree(dev_id)
+        for obj in (dev, enum):
+            if obj.value:
+                method(obj, 2, restype=ctypes.c_ulong)(obj)  # Release
+
+
 # ---------------------------------------------------------------- macOS (say)
 
 class _SayEngine:
@@ -141,13 +219,34 @@ class _SayEngine:
                 found.append(Voice(name, name, m.group(2)))
         return found
 
+    @staticmethod
+    def outputs() -> list[AudioOutput]:
+        try:
+            out = subprocess.run(["say", "-a", "?"], capture_output=True, text=True,
+                                 encoding="utf-8", timeout=15).stdout
+        except (OSError, subprocess.SubprocessError):
+            return []
+        found = []
+        for line in out.splitlines():
+            # 예: "   91 MacBook Pro Speakers"  (앞의 숫자는 재부팅하면 바뀔 수 있어 이름으로 고른다)
+            m = re.match(r"^\s*\d+\s+(.+?)\s*$", line)
+            if m:
+                found.append(AudioOutput(m.group(1), m.group(1)))
+        return found
+
+    @staticmethod
+    def default_output() -> AudioOutput | None:
+        return None  # say는 언제나 macOS의 지금 기본 출력 장치로 읽는다
+
     def init_thread(self):
         pass
 
-    def start(self, text: str, voice_id: str | None, speed: float):
+    def start(self, text: str, voice_id: str | None, speed: float, output_id: str | None = None):
         cmd = ["say", "-r", str(int(self.BASE_WPM * speed))]
         if voice_id:
             cmd += ["-v", voice_id]
+        if output_id and any(o.id == output_id for o in self.outputs()):  # 연결이 끊긴 장치면 기본 장치로
+            cmd += ["-a", output_id]
         # '-'로 시작하면 옵션으로 오해하므로 앞에 공백을 붙인다.
         cmd.append(" " + text if text.startswith("-") else text)
         self._proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -202,8 +301,24 @@ class Speaker:
     def voices(self) -> list[Voice]:
         return self._engine.voices()
 
-    def speak(self, text: str, voice_id: str | None = None, speed: float = 1.0, tag=None):
-        self._cmds.put(("speak", text, voice_id, speed, tag))
+    def outputs(self) -> list[AudioOutput]:
+        """소리를 낼 수 있는 장치 목록. 블루투스 이어폰처럼 연결된 장치가 바뀌면 결과도 바뀐다."""
+        try:
+            return self._engine.outputs()
+        except Exception:
+            return []
+
+    def default_output(self) -> AudioOutput | None:
+        """운영체제의 지금 기본 출력 장치. 알 수 없으면 None."""
+        try:
+            return self._engine.default_output()
+        except Exception:
+            return None
+
+    def speak(self, text: str, voice_id: str | None = None, speed: float = 1.0, tag=None,
+              output_id: str | None = None):
+        """output_id가 None이거나 그 장치가 연결되어 있지 않으면 운영체제의 기본 출력 장치로 읽는다."""
+        self._cmds.put(("speak", text, voice_id, speed, tag, output_id))
 
     def stop(self):
         self._cmds.put(("stop",))
@@ -231,9 +346,9 @@ class Speaker:
                     if cmd[0] == "quit":
                         return
                     if cmd[0] == "speak":
-                        _, text, voice_id, speed, current = cmd
+                        _, text, voice_id, speed, current, output_id = cmd
                         try:
-                            engine.start(text, voice_id, speed)
+                            engine.start(text, voice_id, speed, output_id)
                             speaking = True
                             self._on_event("start", current, None)
                         except Exception as e:  # 음성 엔진 오류는 화면에 알린다

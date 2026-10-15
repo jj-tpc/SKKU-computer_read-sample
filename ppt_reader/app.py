@@ -11,9 +11,10 @@ from tkinter import filedialog, font, messagebox, ttk
 
 from .link import LinkError, PowerPointLink, PptState, resolve_local_path
 from .slides import SOURCES, Deck, load_deck, to_speech
-from .tts import Speaker, TTSUnavailable
+from .tts import AudioOutput, Speaker, TTSUnavailable
 
 APP_TITLE = "PPT 읽어주기"
+DEFAULT_OUTPUT_LABEL = "시스템 기본 장치"
 SETTINGS_FILE = Path.home() / ".ppt_reader_settings.json"
 READING_BG = "#ffe08a"  # 지금 읽는 슬라이드 표시 색
 EMPTY_SLIDE_PAUSE_MS = 1500  # 읽을 글이 없는 장에서 자동 발표가 쉬는 시간
@@ -33,10 +34,16 @@ class App:
         self.link: PowerPointLink | None = None
         self.ppt_state: PptState | None = None
         self.voice_ids: dict[str, str] = {}
+        self.output_choices: dict[str, AudioOutput | None] = {}  # 목록 글자 -> 장치 (None = 시스템 기본)
         self._fonts: dict[str, font.Font] = {}
 
         settings = _load_settings()
+        saved_output = settings.get("output")
+        self.output: AudioOutput | None = None  # None = 운영체제의 기본 출력 장치
+        if isinstance(saved_output, dict) and saved_output.get("id"):
+            self.output = AudioOutput(saved_output["id"], saved_output.get("name") or saved_output["id"])
         self.voice_var = tk.StringVar()
+        self.output_var = tk.StringVar()
         self.speed_var = tk.DoubleVar(value=float(settings.get("speed", 1.0)))
         self.auto_next_var = tk.BooleanVar(value=settings.get("auto_next", False))
         self.read_on_change_var = tk.BooleanVar(value=settings.get("read_on_change", True))
@@ -83,16 +90,22 @@ class App:
 
         opts = ttk.Frame(r, padding=(10, 6, 10, 0))
         opts.pack(fill="x", side="bottom")
-        ttk.Label(opts, text="읽을 내용").pack(side="left")
+        ttk.Label(opts, text="읽을 내용").grid(row=0, column=0, sticky="w")
         self.source_box = ttk.Combobox(opts, state="readonly", width=22,
                                        values=[label for _, label in SOURCES])
         keys = [k for k, _ in SOURCES]
         self.source_box.current(keys.index(source) if source in keys else 0)
         self.source_box.bind("<<ComboboxSelected>>", self._on_source_change)
-        self.source_box.pack(side="left", padx=(6, 16))
-        ttk.Label(opts, text="목소리").pack(side="left")
+        self.source_box.grid(row=0, column=1, sticky="w", padx=(6, 16))
+        ttk.Label(opts, text="목소리").grid(row=0, column=2, sticky="w")
         self.voice_box = ttk.Combobox(opts, state="readonly", width=40, textvariable=self.voice_var)
-        self.voice_box.pack(side="left", padx=6)
+        self.voice_box.grid(row=0, column=3, sticky="w", padx=6)
+        ttk.Label(opts, text="출력 장치").grid(row=1, column=0, sticky="w", pady=(6, 0))
+        # 목록을 펼 때마다 장치를 다시 읽어서, 나중에 연결한 블루투스 이어폰도 고를 수 있게 한다.
+        self.output_box = ttk.Combobox(opts, state="readonly", width=48, textvariable=self.output_var,
+                                       postcommand=self._refresh_outputs)
+        self.output_box.bind("<<ComboboxSelected>>", self._on_output_change)
+        self.output_box.grid(row=1, column=1, columnspan=3, sticky="w", padx=(6, 0), pady=(6, 0))
 
         ctrl = ttk.Frame(r, padding=(10, 8, 10, 0))
         ctrl.pack(fill="x", side="bottom")
@@ -188,6 +201,33 @@ class App:
             self.voice_var.set(labels[0])
         if not any(v.is_korean for v in voices):
             self.set_status("한국어 음성이 설치되어 있지 않습니다. README의 '한국어 음성 설치'를 참고하세요.")
+        self._refresh_outputs()
+
+    def _refresh_outputs(self):
+        if self.speaker is None:
+            return
+        default = self.speaker.default_output()
+        first = DEFAULT_OUTPUT_LABEL + (f" (지금: {default.name})" if default else "")
+        self.output_choices = {first: None}
+        for o in self.speaker.outputs():
+            label, n = o.name, 2
+            while label in self.output_choices:  # 이름이 같은 장치가 여러 개면 번호를 붙인다
+                label, n = f"{o.name} ({n})", n + 1
+            self.output_choices[label] = o
+        selected = first
+        if self.output is not None:
+            selected = next((label for label, o in self.output_choices.items()
+                             if o is not None and o.id == self.output.id), None)
+            if selected is None:  # 고른 이어폰이 지금 연결되어 있지 않음: 연결되면 다시 그 장치로 읽는다
+                selected = f"{self.output.name} (연결 안 됨 - 기본 장치로 읽음)"
+                self.output_choices[selected] = self.output
+        self.output_box.configure(values=list(self.output_choices))
+        self.output_var.set(selected)
+
+    def _on_output_change(self, _event=None):
+        self.output = self.output_choices.get(self.output_var.get())
+        where = self.output.name if self.output else "시스템 기본 장치"
+        self.set_status(f"이제 '{where}'(으)로 읽습니다. 다음에 읽을 때부터 적용됩니다.")
 
     def speak_slide(self, i: int):
         if self.speaker is None or self.deck is None:
@@ -204,8 +244,8 @@ class App:
             tok = self.token
             self.root.after(EMPTY_SLIDE_PAUSE_MS, lambda: self._on_read_finished(tok, True, quiet=True))
             return
-        self.speaker.speak(text, self.voice_ids.get(self.voice_var.get()),
-                           self.speed_var.get(), tag=self.token)
+        self.speaker.speak(text, self.voice_ids.get(self.voice_var.get()), self.speed_var.get(),
+                           tag=self.token, output_id=self.output.id if self.output else None)
         self.set_status(f"{slide.number}번 슬라이드를 읽는 중...  (정지: Esc)")
 
     def read_current(self):
@@ -502,6 +542,7 @@ class App:
         _save_settings({
             "source": self.source_key,
             "voice": self.voice_var.get(),
+            "output": {"id": self.output.id, "name": self.output.name} if self.output else None,
             "speed": round(self.speed_var.get(), 2),
             "auto_next": self.auto_next_var.get(),
             "read_on_change": self.read_on_change_var.get(),

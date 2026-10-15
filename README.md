@@ -13,6 +13,7 @@
 | **PowerPoint 연동** | PowerPoint에 띄워 둔 파일을 자동으로 불러오고, 슬라이드 쇼에서 장을 넘기면 그 장을 바로 읽습니다. |
 | **자동 발표** | 한 장을 다 읽으면 PowerPoint 슬라이드 쇼도 다음 장으로 넘기고 이어서 읽습니다. 숨긴 슬라이드는 건너뜁니다. |
 | 목소리·속도 | 설치된 음성 중에서 고르고, 0.5~2배속으로 조절합니다. 설정은 다음 실행 때도 유지됩니다. |
+| 출력 장치 | 스피커, 이어폰처럼 소리가 나올 장치를 고릅니다. **시스템 기본 장치**를 고르면 Windows/macOS 소리 설정의 기본 장치를 따라갑니다. 고른 이어폰의 연결이 끊겨 있으면 기본 장치로 읽고, 다시 연결되면 이어폰으로 읽습니다. |
 
 ## 실행하기
 
@@ -89,6 +90,7 @@ pyinstaller ppt_reader.spec
 | 증상 | 해결 |
 |---|---|
 | 소리가 안 남 | 목소리 목록에서 다른 음성을 골라 보세요. 출력 장치와 음량도 확인합니다. |
+| 이어폰을 꽂았는데 스피커로 나옴 | **[출력 장치]**에서 이어폰을 직접 고르세요. 목록을 펼 때마다 새로 연결된 장치를 다시 찾습니다. Windows에서 이어폰이 '기본 통신 장치'로만 잡혀 있으면 '시스템 기본 장치'는 여전히 스피커입니다. `python main.py --list-outputs`에서 `*`가 붙은 장치가 지금 기본 장치입니다. |
 | 연동했는데 "파일 위치를 알 수 없습니다" | PowerPoint 파일을 먼저 저장하세요. OneDrive 파일이 동기화 폴더에 없을 때도 이 문구가 뜹니다. 이때는 **[파일 열기]**로 같은 파일을 직접 열면 이름으로 맞춰서 따라갑니다. |
 | `.ppt` 파일이 안 열림 | 예전 형식입니다. PowerPoint에서 **다른 이름으로 저장 → .pptx**로 바꿔 주세요. |
 | 연동 상태를 확인하고 싶음 | `python main.py --probe-ppt`를 실행하면 PowerPoint가 알려 주는 현재 상태가 출력됩니다. |
@@ -96,8 +98,10 @@ pyinstaller ppt_reader.spec
 명령줄 도구도 있습니다.
 ```bash
 python main.py --list-voices                       # 쓸 수 있는 음성 목록 (* = 한국어)
+python main.py --list-outputs                      # 출력 장치 목록 (* = 지금 기본 장치)
 python main.py --dump 발표.pptx                    # 슬라이드별 대본 출력 (소리 없음)
 python main.py --say 발표.pptx --slide 2 --speed 1.2   # 화면 없이 바로 읽기
+python main.py --say 발표.pptx --output 헤드폰        # 이름에 '헤드폰'이 들어간 장치로 읽기
 ```
 
 ## 구조
@@ -107,7 +111,7 @@ main.py                 시작점 (python main.py)
 ppt_reader/
   app.py                화면(tkinter): 슬라이드 목록, 대본 편집, 읽기 제어, 연동 처리
   slides.py             .pptx에서 제목·본문·표·발표자 노트 추출, 읽기 좋게 다듬기
-  tts.py                음성 합성: Windows = SAPI(pywin32), macOS = say 명령
+  tts.py                음성 합성과 출력 장치 선택: Windows = SAPI(pywin32), macOS = say 명령
   link.py               PowerPoint 연동: Windows = COM, macOS = AppleScript(osascript)
   __main__.py           명령줄 옵션(--dump, --say, --list-voices, --probe-ppt)
 tools/make_sample.py    예제 발표 자료 생성
