@@ -147,14 +147,46 @@ def test_powerpoint_follow(app):
     assert app.reading is None
 
 
+def test_settings_apply_and_cancel(app):
+    assert not app.settings_open
+    app.open_settings()
+    assert app.settings_open and app.source_box.get() == "노트 우선 (없으면 본문)"
+    assert app.pending_voice.get().startswith("Korean") and not app.pending_auto_next.get()
+
+    app.source_box.current(1)  # 슬라이드 본문
+    app.pending_voice.set("English  [en_US]")
+    app.pending_auto_next.set(True)
+    app.cancel_settings()  # 취소하면 아무것도 바뀌지 않는다
+    assert not app.settings_open
+    assert app.source == "notes_first" and app.voice_var.get().startswith("Korean")
+    assert not app.auto_next_var.get() and "발표하겠습니다" in app.text.get("1.0", "end")
+
+    app.open_settings()  # 다시 열면 고르다 만 값이 아니라 지금 설정이 보인다
+    assert app.source_box.current() == 0 and not app.pending_auto_next.get()
+    app.source_box.current(1)
+    app.pending_voice.set("English  [en_US]")
+    app.pending_auto_next.set(True)
+    app.apply_settings()
+    assert not app.settings_open
+    assert app.source == "body" and app.auto_next_var.get()
+    assert app.text.get("1.0", "end").startswith("인공지능과 우리의 학교생활")  # 대본이 본문으로 바뀜
+    assert app.status.cget("text").startswith("설정을 적용했습니다.")
+    app.read_current()
+    assert app.speaker.spoken[-1][2] == "en"
+
+
 def test_output_device(app, monkeypatch):
+    app.open_settings()
     labels = app.output_box.cget("values")
-    assert labels[0] == "시스템 기본 장치 (지금: 스피커(Realtek))" and app.output_var.get() == labels[0]
+    assert labels[0] == "시스템 기본 장치 (지금: 스피커(Realtek))" and app.pending_output.get() == labels[0]
+    app.apply_settings()
     app.read_current()
     assert app.speaker.outputs_used[-1] is None  # 기본: 운영체제의 기본 장치
 
-    app.output_var.set("헤드폰(Shokz)")
-    app._on_output_change()
+    app.open_settings()
+    app.pending_output.set("헤드폰(Shokz)")
+    app.apply_settings()
+    assert app.status.cget("text") == "설정을 적용했습니다. 소리는 '헤드폰(Shokz)'(으)로 나옵니다."
     app.stop()
     app.read_current()
     assert app.speaker.outputs_used[-1] == "dev-earphones"
@@ -162,7 +194,9 @@ def test_output_device(app, monkeypatch):
     app.quit()  # 고른 장치는 다음 실행 때도 유지된다
     monkeypatch.setattr(FakeSpeaker, "connected", [SPEAKERS])  # 이어폰 연결이 끊긴 채로 다시 실행
     b = make_app()
-    assert b.output_var.get() == "헤드폰(Shokz) (연결 안 됨 - 기본 장치로 읽음)"
+    b.open_settings()
+    assert b.pending_output.get() == "헤드폰(Shokz) (연결 안 됨 - 기본 장치로 읽음)"
+    b.apply_settings()
     b.read_current()
     assert b.speaker.outputs_used[-1] == "dev-earphones"  # 다시 연결되면 이어폰으로, 그 전엔 엔진이 기본 장치로
     b.quit()

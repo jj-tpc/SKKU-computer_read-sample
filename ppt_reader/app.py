@@ -20,6 +20,29 @@ READING_BG = "#ffe08a"  # 지금 읽는 슬라이드 표시 색
 EMPTY_SLIDE_PAUSE_MS = 1500  # 읽을 글이 없는 장에서 자동 발표가 쉬는 시간
 
 
+class PrimaryButton(tk.Label):
+    """파란 바탕에 흰 글씨인 주 버튼(예: [적용]).
+
+    ttk 버튼과 macOS의 tk.Button은 운영체제 모양을 따르느라 배경색을 바꿀 수 없어서 Label로 만든다.
+    """
+    COLORS = {"normal": "#1a73e8", "hover": "#1765cc", "pressed": "#1557b0"}
+
+    def __init__(self, master, text: str, command):
+        super().__init__(master, text=text, bg=self.COLORS["normal"], fg="white",
+                         padx=22, pady=4, cursor="hand2")
+        self._command = command
+        self.bind("<Enter>", lambda e: self.configure(bg=self.COLORS["hover"]))
+        self.bind("<Leave>", lambda e: self.configure(bg=self.COLORS["normal"]))
+        self.bind("<ButtonPress-1>", lambda e: self.configure(bg=self.COLORS["pressed"]))
+        self.bind("<ButtonRelease-1>", self._on_release)
+
+    def _on_release(self, event):
+        inside = 0 <= event.x < self.winfo_width() and 0 <= event.y < self.winfo_height()
+        self.configure(bg=self.COLORS["hover" if inside else "normal"])
+        if inside:  # 누른 채로 버튼 밖에서 떼면 취소한 것으로 본다
+            self._command()
+
+
 class App:
     def __init__(self, root: tk.Tk, initial_path: str | None = None):
         self.root = root
@@ -42,15 +65,22 @@ class App:
         self.output: AudioOutput | None = None  # None = 운영체제의 기본 출력 장치
         if isinstance(saved_output, dict) and saved_output.get("id"):
             self.output = AudioOutput(saved_output["id"], saved_output.get("name") or saved_output["id"])
+        source = settings.get("source", "notes_first")
+        self.source = source if source in [k for k, _ in SOURCES] else "notes_first"
         self.voice_var = tk.StringVar()
-        self.output_var = tk.StringVar()
         self.speed_var = tk.DoubleVar(value=float(settings.get("speed", 1.0)))
         self.auto_next_var = tk.BooleanVar(value=settings.get("auto_next", False))
         self.read_on_change_var = tk.BooleanVar(value=settings.get("read_on_change", True))
         self.follow_var = tk.BooleanVar(value=False)
         self.topmost_var = tk.BooleanVar(value=settings.get("topmost", False))
+        # 설정 화면에서 고르는 중인 값. [적용]을 눌러야 위의 값으로 옮겨진다.
+        self.pending_voice = tk.StringVar()
+        self.pending_output = tk.StringVar()
+        self.pending_auto_next = tk.BooleanVar()
+        self.pending_read_on_change = tk.BooleanVar()
+        self.settings_open = False
 
-        self._build_ui(settings.get("source", "notes_first"))
+        self._build_ui()
         self._init_speaker(settings.get("voice"))
         self.root.after(50, self._pump)
         self.root.protocol("WM_DELETE_WINDOW", self.quit)
@@ -62,52 +92,33 @@ class App:
 
     # ------------------------------------------------------------ 화면 구성
 
-    def _build_ui(self, source: str):
+    def _build_ui(self):
         r = self.root
         r.title(APP_TITLE)
 
-        top = ttk.Frame(r, padding=(10, 8))
+        # 맨 아래 상태 표시줄을 먼저 붙여야 창이 작아져도 가려지지 않는다. 두 화면이 함께 쓴다.
+        self.status = ttk.Label(r, text="", padding=(10, 6), foreground="#333")
+        self.status.pack(fill="x", side="bottom")
+        self.status.bind("<Configure>", lambda e: self.status.configure(wraplength=e.width - 24))
+
+        # [설정]을 누르면 main_view를 숨기고 같은 자리에 settings_view를 띄운다.
+        self.main_view = ttk.Frame(r)
+        self.main_view.pack(fill="both", expand=True)
+        self.settings_view = self._build_settings(r)
+        m = self.main_view
+
+        top = ttk.Frame(m, padding=(10, 8))
         top.pack(fill="x")
         ttk.Button(top, text="파일 열기...", command=self.ask_open).pack(side="left")
         ttk.Checkbutton(top, text="PowerPoint 연동", variable=self.follow_var,
                         command=self.toggle_link).pack(side="left", padx=(14, 6))
         self.link_label = ttk.Label(top, text="", foreground="#555")
         self.link_label.pack(side="left")
+        ttk.Button(top, text="⚙ 설정", command=self.open_settings).pack(side="right")
         ttk.Checkbutton(top, text="항상 위", variable=self.topmost_var,
-                        command=self.toggle_topmost).pack(side="right")
+                        command=self.toggle_topmost).pack(side="right", padx=(0, 12))
 
-        # 맨 아래 상태 표시줄을 먼저 붙여야 창이 작아져도 가려지지 않는다.
-        self.status = ttk.Label(r, text="", padding=(10, 6), foreground="#333")
-        self.status.pack(fill="x", side="bottom")
-        self.status.bind("<Configure>", lambda e: self.status.configure(wraplength=e.width - 24))
-
-        opts2 = ttk.Frame(r, padding=(10, 4, 10, 0))
-        opts2.pack(fill="x", side="bottom")
-        ttk.Checkbutton(opts2, text="다 읽으면 다음 장으로 넘어가기 (자동 발표)",
-                        variable=self.auto_next_var).pack(side="left")
-        ttk.Checkbutton(opts2, text="슬라이드 쇼에서 장을 넘기면 바로 읽기",
-                        variable=self.read_on_change_var).pack(side="left", padx=16)
-
-        opts = ttk.Frame(r, padding=(10, 6, 10, 0))
-        opts.pack(fill="x", side="bottom")
-        ttk.Label(opts, text="읽을 내용").grid(row=0, column=0, sticky="w")
-        self.source_box = ttk.Combobox(opts, state="readonly", width=22,
-                                       values=[label for _, label in SOURCES])
-        keys = [k for k, _ in SOURCES]
-        self.source_box.current(keys.index(source) if source in keys else 0)
-        self.source_box.bind("<<ComboboxSelected>>", self._on_source_change)
-        self.source_box.grid(row=0, column=1, sticky="w", padx=(6, 16))
-        ttk.Label(opts, text="목소리").grid(row=0, column=2, sticky="w")
-        self.voice_box = ttk.Combobox(opts, state="readonly", width=40, textvariable=self.voice_var)
-        self.voice_box.grid(row=0, column=3, sticky="w", padx=6)
-        ttk.Label(opts, text="출력 장치").grid(row=1, column=0, sticky="w", pady=(6, 0))
-        # 목록을 펼 때마다 장치를 다시 읽어서, 나중에 연결한 블루투스 이어폰도 고를 수 있게 한다.
-        self.output_box = ttk.Combobox(opts, state="readonly", width=48, textvariable=self.output_var,
-                                       postcommand=self._refresh_outputs)
-        self.output_box.bind("<<ComboboxSelected>>", self._on_output_change)
-        self.output_box.grid(row=1, column=1, columnspan=3, sticky="w", padx=(6, 0), pady=(6, 0))
-
-        ctrl = ttk.Frame(r, padding=(10, 8, 10, 0))
+        ctrl = ttk.Frame(m, padding=(10, 8, 10, 0))
         ctrl.pack(fill="x", side="bottom")
         ttk.Button(ctrl, text="◀ 이전", command=self.prev_slide).pack(side="left")
         self.play_btn = ttk.Button(ctrl, text="▶ 읽기", width=10, command=self.read_current)
@@ -123,7 +134,7 @@ class App:
         self.speed_label.pack(side="left")
         self._update_speed_label()
 
-        panes = ttk.PanedWindow(r, orient="horizontal")
+        panes = ttk.PanedWindow(m, orient="horizontal")
         panes.pack(fill="both", expand=True, padx=10)
 
         left = ttk.Frame(panes)
@@ -158,17 +169,56 @@ class App:
         panes.add(right, weight=3)
 
         # 위젯들이 원하는 크기로 창 크기를 한 번 정해 두면, 긴 안내 문구가 떠도 창이 늘어나지 않는다.
+        # 설정 화면도 같은 창에 들어가야 하므로 두 화면 중 큰 쪽에 맞춘다.
         r.update_idletasks()
-        w, h = r.winfo_reqwidth(), r.winfo_reqheight() + self.status.winfo_reqheight()
+        status_h = self.status.winfo_reqheight()
+        w = max(r.winfo_reqwidth(), self.settings_view.winfo_reqwidth())
+        h = max(r.winfo_reqheight(), self.settings_view.winfo_reqheight() + status_h) + status_h
         r.geometry(f"{w}x{h}")
         r.minsize(int(w * 0.75), int(h * 0.75))
         self.status.configure(wraplength=w - 24)
 
         r.bind("<space>", self._on_space)
-        r.bind("<Escape>", lambda e: self.stop())
-        r.bind("<F5>", lambda e: self.read_current())
+        r.bind("<Escape>", lambda e: self.cancel_settings() if self.settings_open else self.stop())
+        r.bind("<Return>", lambda e: self.apply_settings() if self.settings_open else None)
+        r.bind("<F5>", lambda e: None if self.settings_open else self.read_current())
         r.bind("<Prior>", lambda e: self._unless_typing(e, self.prev_slide))
         r.bind("<Next>", lambda e: self._unless_typing(e, self.next_slide))
+
+    def _build_settings(self, parent) -> ttk.Frame:
+        sv = ttk.Frame(parent, padding=(20, 14, 20, 8))
+        ttk.Label(sv, text="설정", font=self._font("header", 14, 17, "bold")).pack(anchor="w")
+        ttk.Separator(sv).pack(fill="x", pady=(8, 14))
+
+        # 맨 아래 [취소] [적용]을 먼저 붙여야 창이 작아져도 가려지지 않는다.
+        buttons = ttk.Frame(sv)
+        buttons.pack(side="bottom", fill="x", pady=(10, 0))
+        PrimaryButton(buttons, text="적용", command=self.apply_settings).pack(side="right")
+        ttk.Button(buttons, text="취소", command=self.cancel_settings).pack(side="right", padx=(0, 8))
+        ttk.Separator(sv).pack(side="bottom", fill="x")
+
+        form = ttk.Frame(sv)
+        form.pack(fill="x")
+        ttk.Label(form, text="읽을 내용").grid(row=0, column=0, sticky="w", pady=6)
+        self.source_box = ttk.Combobox(form, state="readonly", width=22,
+                                       values=[label for _, label in SOURCES])
+        self.source_box.grid(row=0, column=1, sticky="w", padx=(12, 0), pady=6)
+        ttk.Label(form, text="목소리").grid(row=1, column=0, sticky="w", pady=6)
+        self.voice_box = ttk.Combobox(form, state="readonly", width=40, textvariable=self.pending_voice)
+        self.voice_box.grid(row=1, column=1, sticky="w", padx=(12, 0), pady=6)
+        ttk.Label(form, text="출력 장치").grid(row=2, column=0, sticky="w", pady=(6, 0))
+        # 목록을 펼 때마다 장치를 다시 읽어서, 나중에 연결한 블루투스 이어폰도 고를 수 있게 한다.
+        self.output_box = ttk.Combobox(form, state="readonly", width=48, textvariable=self.pending_output,
+                                       postcommand=lambda: self._refresh_outputs(self._pending_output()))
+        self.output_box.grid(row=2, column=1, sticky="w", padx=(12, 0), pady=(6, 0))
+        ttk.Label(form, text="목록을 펼 때마다 연결된 장치를 다시 찾습니다.",
+                  foreground="#666").grid(row=3, column=1, sticky="w", padx=(12, 0), pady=(2, 6))
+
+        ttk.Checkbutton(sv, text="다 읽으면 다음 장으로 넘어가기 (자동 발표)",
+                        variable=self.pending_auto_next).pack(anchor="w", pady=(12, 4))
+        ttk.Checkbutton(sv, text="슬라이드 쇼에서 장을 넘기면 바로 읽기",
+                        variable=self.pending_read_on_change).pack(anchor="w", pady=4)
+        return sv
 
     def _font(self, key: str, win_size: int, mac_size: int, weight: str = "normal") -> font.Font:
         if key not in self._fonts:
@@ -201,9 +251,9 @@ class App:
             self.voice_var.set(labels[0])
         if not any(v.is_korean for v in voices):
             self.set_status("한국어 음성이 설치되어 있지 않습니다. README의 '한국어 음성 설치'를 참고하세요.")
-        self._refresh_outputs()
 
-    def _refresh_outputs(self):
+    def _refresh_outputs(self, chosen: AudioOutput | None):
+        """출력 장치 목록을 다시 읽고 chosen(None = 시스템 기본 장치)을 고른 상태로 둔다."""
         if self.speaker is None:
             return
         default = self.speaker.default_output()
@@ -215,19 +265,59 @@ class App:
                 label, n = f"{o.name} ({n})", n + 1
             self.output_choices[label] = o
         selected = first
-        if self.output is not None:
+        if chosen is not None:
             selected = next((label for label, o in self.output_choices.items()
-                             if o is not None and o.id == self.output.id), None)
+                             if o is not None and o.id == chosen.id), None)
             if selected is None:  # 고른 이어폰이 지금 연결되어 있지 않음: 연결되면 다시 그 장치로 읽는다
-                selected = f"{self.output.name} (연결 안 됨 - 기본 장치로 읽음)"
-                self.output_choices[selected] = self.output
+                selected = f"{chosen.name} (연결 안 됨 - 기본 장치로 읽음)"
+                self.output_choices[selected] = chosen
         self.output_box.configure(values=list(self.output_choices))
-        self.output_var.set(selected)
+        self.pending_output.set(selected)
 
-    def _on_output_change(self, _event=None):
-        self.output = self.output_choices.get(self.output_var.get())
-        where = self.output.name if self.output else "시스템 기본 장치"
-        self.set_status(f"이제 '{where}'(으)로 읽습니다. 다음에 읽을 때부터 적용됩니다.")
+    def _pending_output(self) -> AudioOutput | None:
+        label = self.pending_output.get()
+        return self.output_choices[label] if label in self.output_choices else self.output
+
+    # ------------------------------------------------------------ 설정 화면
+
+    def open_settings(self):
+        if self.settings_open:
+            return
+        self._commit_edit()
+        self.source_box.current([k for k, _ in SOURCES].index(self.source))
+        self.pending_voice.set(self.voice_var.get())
+        self._refresh_outputs(self.output)
+        self.pending_auto_next.set(self.auto_next_var.get())
+        self.pending_read_on_change.set(self.read_on_change_var.get())
+        self.main_view.pack_forget()
+        self.settings_view.pack(fill="both", expand=True)
+        self.settings_open = True
+        self.source_box.focus_set()
+
+    def apply_settings(self):
+        if not self.settings_open:
+            return
+        source = SOURCES[max(self.source_box.current(), 0)][0]
+        source_changed = source != self.source
+        self.source = source
+        self.voice_var.set(self.pending_voice.get())
+        self.output = self._pending_output()
+        self.auto_next_var.set(self.pending_auto_next.get())
+        self.read_on_change_var.set(self.pending_read_on_change.get())
+        self._close_settings()
+        if source_changed:
+            self._show_slide()
+        where = self.output.name if self.output else DEFAULT_OUTPUT_LABEL
+        self.set_status(f"설정을 적용했습니다. 소리는 '{where}'(으)로 나옵니다.")
+
+    def cancel_settings(self):
+        if self.settings_open:
+            self._close_settings()
+
+    def _close_settings(self):
+        self.settings_view.pack_forget()
+        self.main_view.pack(fill="both", expand=True)
+        self.settings_open = False
 
     def speak_slide(self, i: int):
         if self.speaker is None or self.deck is None:
@@ -300,8 +390,8 @@ class App:
         self.play_btn.configure(text="● 읽는 중" if i is not None else "▶ 읽기")
 
     def _on_space(self, event):
-        # 글자 입력 칸이나 버튼에 포커스가 있으면 그 위젯의 원래 동작을 따른다.
-        if isinstance(event.widget, (tk.Text, tk.Entry, ttk.Entry, tk.Button, ttk.Button,
+        # 설정 화면이거나, 글자 입력 칸이나 버튼에 포커스가 있으면 그 위젯의 원래 동작을 따른다.
+        if self.settings_open or isinstance(event.widget, (tk.Text, tk.Entry, ttk.Entry, tk.Button, ttk.Button,
                                      ttk.Checkbutton, tk.Checkbutton)):
             return
         if self.reading is not None:
@@ -311,7 +401,7 @@ class App:
         return "break"
 
     def _unless_typing(self, event, action):
-        if not isinstance(event.widget, tk.Text):
+        if not self.settings_open and not isinstance(event.widget, tk.Text):
             action()
             return "break"
 
@@ -396,15 +486,11 @@ class App:
                 return j
         return None
 
-    @property
-    def source_key(self) -> str:
-        return SOURCES[max(self.source_box.current(), 0)][0]
-
     def _script_for(self, i: int) -> str:
         slide = self.deck.slides[i]
         if slide.number in self.edits:
             return self.edits[slide.number]
-        return slide.script(self.source_key)
+        return slide.script(self.source)
 
     def _show_slide(self):
         self.text.delete("1.0", "end")
@@ -431,7 +517,7 @@ class App:
             return
         slide = self.deck.slides[self.current]
         new = self.text.get("1.0", "end-1c")
-        if new.strip() == slide.script(self.source_key).strip():
+        if new.strip() == slide.script(self.source).strip():
             self.edits.pop(slide.number, None)
         else:
             self.edits[slide.number] = new
@@ -442,10 +528,6 @@ class App:
         if self.deck is None or self.current < 0:
             return
         self.edits.pop(self.deck.slides[self.current].number, None)
-        self._show_slide()
-
-    def _on_source_change(self, _event=None):
-        self._commit_edit()
         self._show_slide()
 
     def toggle_topmost(self):
@@ -540,7 +622,7 @@ class App:
     def quit(self):
         self._commit_edit()
         _save_settings({
-            "source": self.source_key,
+            "source": self.source,
             "voice": self.voice_var.get(),
             "output": {"id": self.output.id, "name": self.output.name} if self.output else None,
             "speed": round(self.speed_var.get(), 2),

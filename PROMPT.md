@@ -33,7 +33,7 @@ Windows COM, macOS AppleScript, tkinter, 운영체제 내장 TTS(SAPI, say)를 �
 아래 명세와 똑같이 동작하는 프로그램 "PPT 읽어주기"를 만든다. 결과물은 다음 다섯 가지다.
 1. `ppt_reader` 패키지(화면, 슬라이드 추출, 음성, PowerPoint 연동, 명령줄)
 2. 시연용 예제 발표 자료 생성기와 그 결과물인 `sample/sample_presentation.pptx`
-3. pytest 자동 테스트 10개
+3. pytest 자동 테스트 11개
 4. 운영체제별 실행 스크립트와 PyInstaller 빌드 설정
 5. 한국어 README.md
 </objective>
@@ -361,6 +361,10 @@ SETTINGS_FILE = Path.home() / ".ppt_reader_settings.json"
 READING_BG = "#ffe08a"            # 지금 읽는 슬라이드 표시 색
 EMPTY_SLIDE_PAUSE_MS = 1500       # 읽을 글이 없는 장에서 자동 발표가 쉬는 시간
 ```
+`PrimaryButton(tk.Label)`: 파란 바탕에 흰 글씨인 주 버튼([적용]에 쓴다). ttk 버튼과 macOS의 tk.Button은 운영체제 모양을 따르느라 배경색을 바꿀 수 없어서 Label로 만든다.
+- 색: normal `#1a73e8`, hover `#1765cc`, pressed `#1557b0`. 글자색 white, padx 22, pady 4, cursor "hand2"
+- `<Enter>` → hover 색, `<Leave>` → normal 색, `<ButtonPress-1>` → pressed 색
+- `<ButtonRelease-1>`: 포인터가 버튼 안이면 hover 색으로 바꾸고 command를 부른다. 밖이면 normal 색으로만 바꾼다(누른 채로 밖에서 떼면 취소).
 </constants>
 
 <state>
@@ -376,44 +380,53 @@ EMPTY_SLIDE_PAUSE_MS = 1500       # 읽을 글이 없는 장에서 자동 발표
 | speaker, link, ppt_state, voice_ids(화면 표시 이름을 음성 id로) | |
 | output_choices: dict[str, AudioOutput 또는 None] | 출력 장치 목록의 표시 글자를 장치로. None은 시스템 기본 장치 |
 | output: AudioOutput 또는 None | 고른 출력 장치. None이면 운영체제의 기본 출력 장치 |
-| tk 변수 | voice_var, output_var, speed_var(Double), auto_next_var, read_on_change_var, follow_var, topmost_var |
+| source: str | 적용된 읽을 내용 키. 설정 파일 값이 SOURCES에 없으면 "notes_first" |
+| tk 변수(적용된 값) | voice_var, speed_var(Double), auto_next_var, read_on_change_var, follow_var, topmost_var |
+| tk 변수(설정 화면에서 고르는 중인 값) | pending_voice, pending_output, pending_auto_next, pending_read_on_change. [적용]을 눌러야 적용된 값으로 옮겨진다 |
+| settings_open: bool | 설정 화면이 떠 있는지 |
 
 설정 파일에서 읽는 기본값은 speed 1.0, auto_next False, read_on_change True, topmost False, source "notes_first"다. output은 `{"id": ..., "name": ...}` dict이고 id가 있을 때만 `AudioOutput(id, name 또는 id)`로 복원한다. 그 밖에는 None이다. follow_var(연동)는 저장하지 않고 항상 꺼진 상태로 시작한다.
-초기화 순서: `_build_ui(source)` → `_init_speaker(saved_voice)` → `after(50, _pump)` → WM_DELETE_WINDOW를 quit에 연결 → topmost가 켜져 있으면 적용 → `_show_slide()` → initial_path가 있으면 `open_file`.
+초기화 순서: `_build_ui()` → `_init_speaker(saved_voice)` → `after(50, _pump)` → WM_DELETE_WINDOW를 quit에 연결 → topmost가 켜져 있으면 적용 → `_show_slide()` → initial_path가 있으면 `open_file`.
 </state>
 
 <layout>
 pack 순서가 중요하다. 아래쪽 막대들을 `side="bottom"`으로 먼저 붙여야 창이 작아져도 가려지지 않는다.
+창은 두 화면을 같은 자리에서 바꿔 끼운다. 메인 화면(main_view)과 설정 화면(settings_view)은 root의 Frame이고, 한 번에 하나만 `pack(fill="both", expand=True)`되어 있다. 상태 표시줄은 두 화면이 함께 쓴다.
+0. 먼저 status 라벨(padding (10,6), 글자색 #333)을 root의 bottom에 붙인다. `<Configure>`에서 wraplength를 width-24로 맞춘다. 그다음 main_view를 pack하고, settings_view는 `_build_settings(root)`로 만들기만 하고 pack하지 않는다. 아래 1~3은 main_view 안의 구성이다.
 1. 위쪽 줄(Frame, padding (10,8)), 왼쪽부터 차례로:
    - [파일 열기...] 버튼
    - [PowerPoint 연동] Checkbutton (padx (14,6), command=toggle_link)
    - link_label (회색 #555)
-   - 오른쪽 끝에 [항상 위] Checkbutton
-2. status 라벨(padding (10,6), 글자색 #333)을 bottom에 붙인다. `<Configure>`에서 wraplength를 width-24로 맞춘다.
-3. 옵션 줄 2(padding (10,4,10,0))를 bottom에 붙인다. 들어가는 것:
-   - "다 읽으면 다음 장으로 넘어가기 (자동 발표)" Checkbutton
-   - "슬라이드 쇼에서 장을 넘기면 바로 읽기" Checkbutton (padx 16)
-4. 옵션 줄 1(padding (10,6,10,0))을 bottom에 붙인다. 안쪽은 grid로 두 줄을 배치하고 모두 sticky "w"다.
-   - 0행: "읽을 내용" 라벨(0열), 읽기 전용 Combobox(1열, width 22, SOURCES의 표시 이름들, 저장된 source로 current 지정, padx (6,16)), "목소리" 라벨(2열), 읽기 전용 Combobox(3열, width 40, textvariable=voice_var, padx 6)
-   - 1행: "출력 장치" 라벨(0열, pady (6,0)), 읽기 전용 Combobox(1열부터 columnspan 3, width 48, textvariable=output_var, `postcommand=_refresh_outputs`, `<<ComboboxSelected>>` → `_on_output_change`, padx (6,0), pady (6,0)). postcommand로 목록을 펼 때마다 장치를 다시 읽어서, 나중에 연결한 블루투스 이어폰도 고를 수 있게 한다.
-5. 제어 줄(padding (10,8,10,0))을 bottom에 붙인다.
+   - 오른쪽 끝에 [⚙ 설정] 버튼(command=open_settings), 그 왼쪽에 [항상 위] Checkbutton(padx (0,12))
+2. 제어 줄(padding (10,8,10,0))을 main_view의 bottom에 붙인다.
    - 왼쪽부터: [◀ 이전], [▶ 읽기](width 10, padx 4), [■ 정지], [다음 ▶](padx 4)
    - 오른쪽에 둔 Frame 안에: "속도" 라벨, ttk.Scale(0.5~2.0, length 140, padx 6), 속도 값 라벨(width 5, 글자 `f"{v:.1f}배"`)
-6. 가로 ttk.PanedWindow(fill both, expand, padx 10). 왼쪽 칸과 오른쪽 칸의 weight는 1:3이다.
+3. 가로 ttk.PanedWindow(main_view 안, fill both, expand, padx 10). 왼쪽 칸과 오른쪽 칸의 weight는 1:3이다.
    - 왼쪽 칸: tk.Listbox(activestyle none, exportselection False, width 34, height 16)와 세로 스크롤바
    - 오른쪽 칸(padding (10,0,0,0)), 위에서부터:
      - header 라벨(굵게)
      - 안내 라벨 "읽을 대본 (여기서 고치면 고친 대로 읽습니다)" (#666, pady (2,4))
      - 맨 아래(side bottom) 줄: edited_label(#b05000)과 오른쪽 끝의 [원래 내용으로] 버튼
      - 그 사이에 tk.Text(wrap word, undo True, width 52, height 12, padx 10, pady 8)와 세로 스크롤바
-7. 크기 고정: `update_idletasks()`를 한 뒤 `w = reqwidth`, `h = reqheight + status.reqheight`로 `geometry(f"{w}x{h}")`를 지정한다. `minsize(int(w*0.75), int(h*0.75))`, `status.wraplength = w-24`도 설정한다.
+4. 설정 화면(`_build_settings(parent)`, Frame padding (20,14,20,8)), 위에서부터:
+   - "설정" 라벨(제목 글꼴, anchor w), 가로 Separator(pady (8,14))
+   - 맨 아래(side bottom, pady (10,0)) 버튼 줄: 오른쪽 끝에 PrimaryButton "적용"(command=apply_settings), 그 왼쪽에 ttk.Button "취소"(command=cancel_settings, padx (0,8)). 버튼 줄 바로 위(side bottom)에 가로 Separator
+   - form(grid, 모두 sticky "w", 입력 칸은 1열 padx (12,0)):
+     - 0행: "읽을 내용" 라벨, 읽기 전용 Combobox source_box(width 22, SOURCES의 표시 이름들), pady 6
+     - 1행: "목소리" 라벨, 읽기 전용 Combobox voice_box(width 40, textvariable=pending_voice), pady 6
+     - 2행: "출력 장치" 라벨, 읽기 전용 Combobox output_box(width 48, textvariable=pending_output, `postcommand=lambda: _refresh_outputs(_pending_output())`), pady (6,0). 목록을 펼 때마다 장치를 다시 읽어서 나중에 연결한 블루투스 이어폰도 고를 수 있게 하고, 고르는 중이던 항목은 유지한다.
+     - 3행 1열: 회색(#666) 안내 "목록을 펼 때마다 연결된 장치를 다시 찾습니다." pady (2,6)
+   - form 아래 Checkbutton 두 개(anchor w): "다 읽으면 다음 장으로 넘어가기 (자동 발표)"(variable=pending_auto_next, pady (12,4)), "슬라이드 쇼에서 장을 넘기면 바로 읽기"(variable=pending_read_on_change, pady 4)
+   - 속도 막대는 발표 중에 자주 만지므로 설정 화면으로 옮기지 않고 메인 화면 제어 줄에 둔다.
+5. 크기 고정: `update_idletasks()`를 한 뒤 두 화면 중 큰 쪽에 맞춘다. `status_h = status.reqheight`, `w = max(root.reqwidth, settings_view.reqwidth)`, `h = max(root.reqheight, settings_view.reqheight + status_h) + status_h`로 `geometry(f"{w}x{h}")`를 지정한다. `minsize(int(w*0.75), int(h*0.75))`, `status.wraplength = w-24`도 설정한다.
    창 크기를 픽셀로 박아 두면 화면 배율이 125% 이상일 때 아래쪽이 잘린다. 그래서 위젯 크기를 글자 수로 정하고, 그 결과로 창 크기를 한 번만 고정한다. 한 번 고정해 두면 긴 안내 문구가 떠도 창이 늘어나지 않는다.
-8. 키 바인딩(root):
-   - `<space>` → _on_space
-   - `<Escape>` → stop
-   - `<F5>` → read_current
-   - `<Prior>`/`<Next>` → 포커스가 tk.Text가 아닐 때만 이전/다음 장으로 가고 "break"
-9. 글꼴: Windows는 "Malgun Gothic", macOS는 "Apple SD Gothic Neo", 그 밖에는 "TkDefaultFont"이다. 크기(Windows/macOS)는 다음과 같다.
+6. 키 바인딩(root):
+   - `<space>` → _on_space (설정 화면에서는 아무것도 하지 않고 위젯의 원래 동작을 따른다)
+   - `<Escape>` → 설정 화면이면 cancel_settings, 아니면 stop
+   - `<Return>` → 설정 화면이면 apply_settings, 아니면 아무것도 하지 않음
+   - `<F5>` → 설정 화면이 아닐 때만 read_current
+   - `<Prior>`/`<Next>` → 설정 화면이 아니고 포커스가 tk.Text가 아닐 때만 이전/다음 장으로 가고 "break"
+7. 글꼴: Windows는 "Malgun Gothic", macOS는 "Apple SD Gothic Neo", 그 밖에는 "TkDefaultFont"이다. 크기(Windows/macOS)는 다음과 같다.
    - 목록 11/13
    - 대본 13/15
    - 제목 14/17 굵게
@@ -427,19 +440,37 @@ pack 순서가 중요하다. 아래쪽 막대들을 `side="bottom"`으로 먼저
 3. 표시 이름은 lang이 있으면 `f"{name}  [{lang}]"`(공백 두 칸), 없으면 name이다.
 4. 저장된 음성이 목록에 있으면 그것을, 없으면 첫 번째 음성을 고른다.
 5. 한국어 음성이 하나도 없으면 상태 표시줄에 해당 안내를 띄운다(<ui_strings> 참고).
-6. `_refresh_outputs()`를 부른다.
+음성 목록은 voice_box(설정 화면)의 values에 넣고, 고른 음성은 voice_var(적용된 값)에 둔다.
 </behavior>
 
-<behavior name="_refresh_outputs">
-speaker가 없으면 아무것도 하지 않는다.
+<behavior name="_refresh_outputs(chosen)">
+출력 장치 목록을 다시 읽고 chosen(AudioOutput 또는 None = 시스템 기본 장치)을 고른 상태로 둔다. speaker가 없으면 아무것도 하지 않는다.
 1. `default = speaker.default_output()`. 첫 항목 글자는 default가 있으면 `f"시스템 기본 장치 (지금: {default.name})"`, 없으면 `"시스템 기본 장치"`이고 값은 None이다.
 2. `speaker.outputs()`를 차례로 넣는다. 글자는 name이고, 이미 있는 글자면 `f"{name} (2)"`, `(3)`처럼 번호를 붙인다.
-3. 고를 항목: output이 None이면 첫 항목. output이 있으면 id가 같은 항목. 그런 항목이 없으면(이어폰 연결이 끊김) `f"{output.name} (연결 안 됨 - 기본 장치로 읽음)"` 항목을 output 값으로 추가해서 고른다. output은 바꾸지 않으므로 다시 연결되면 그 장치로 읽는다.
-4. Combobox values를 갱신하고 output_var를 고른 항목으로 둔다.
+3. 고를 항목: chosen이 None이면 첫 항목. chosen이 있으면 id가 같은 항목. 그런 항목이 없으면(이어폰 연결이 끊김) `f"{chosen.name} (연결 안 됨 - 기본 장치로 읽음)"` 항목을 chosen 값으로 추가해서 고른다. 그래서 적용하면 output은 그 장치로 남고, 다시 연결되면 그 장치로 읽는다.
+4. output_box의 values를 갱신하고 pending_output을 고른 항목으로 둔다.
+`_pending_output()`: pending_output 글자가 output_choices에 있으면 그 값(None 포함), 없으면 지금 output.
 </behavior>
 
-<behavior name="_on_output_change">
-`output = output_choices.get(output_var)`로 두고 `f"이제 '{장치 이름 또는 시스템 기본 장치}'(으)로 읽습니다. 다음에 읽을 때부터 적용됩니다."`를 띄운다.
+<behavior name="open_settings">
+이미 열려 있으면 아무것도 하지 않는다.
+1. `_commit_edit()`
+2. 적용된 값으로 고르는 중인 값을 채운다: source_box를 source의 위치로, pending_voice = voice_var, `_refresh_outputs(output)`, pending_auto_next = auto_next_var, pending_read_on_change = read_on_change_var. 그래서 취소했다가 다시 열면 고르다 만 값이 아니라 지금 설정이 보인다.
+3. main_view를 pack_forget하고 settings_view를 pack한다. settings_open = True, source_box에 포커스.
+읽는 중이면 그대로 계속 읽는다.
+</behavior>
+
+<behavior name="apply_settings">
+설정 화면이 아니면 아무것도 하지 않는다.
+1. 새 source = `SOURCES[max(source_box.current(), 0)][0]`. 바뀌었는지 기억해 둔다.
+2. voice_var = pending_voice, output = `_pending_output()`, auto_next_var = pending_auto_next, read_on_change_var = pending_read_on_change
+3. `_close_settings()`(settings_view를 pack_forget, main_view를 pack, settings_open = False)
+4. source가 바뀌었으면 `_show_slide()`로 대본을 다시 그린다.
+5. `f"설정을 적용했습니다. 소리는 '{output.name 또는 시스템 기본 장치}'(으)로 나옵니다."`를 띄운다.
+</behavior>
+
+<behavior name="cancel_settings">
+설정 화면이면 `_close_settings()`만 한다. 적용된 값은 그대로다.
 </behavior>
 
 <behavior name="speak_slide(i)">
@@ -511,7 +542,7 @@ speaker나 deck이 없으면 아무것도 하지 않는다.
 </behavior>
 
 <behavior name="대본 편집">
-- `_script_for(i)`: 그 장의 번호가 edits에 있으면 고친 대본을, 없으면 `slide.script(source_key)`를 돌려준다. source_key는 `SOURCES[max(source_box.current(), 0)][0]`이다.
+- `_script_for(i)`: 그 장의 번호가 edits에 있으면 고친 대본을, 없으면 `slide.script(source)`를 돌려준다. source는 적용된 값이다. 설정 화면의 source_box에서 고르는 중인 값을 쓰면 [적용] 전에 대본이 바뀌므로 쓰지 않는다.
 - `_show_slide()`:
   1. Text를 비운다.
   2. 장이 없으면 header를 "PPT 파일을 열어 주세요"로 바꾸고 첫 화면 안내를 띄운다.
@@ -522,7 +553,7 @@ speaker나 deck이 없으면 아무것도 하지 않는다.
   - 다르면 edits에 저장한다.
   - 수정 플래그를 끄고 edited_label을 갱신한다.
 - [원래 내용으로]: edits에서 현재 장을 지우고 `_show_slide()`를 부른다.
-- 읽을 내용 Combobox가 바뀌면 `_commit_edit()`과 `_show_slide()`를 부른다.
+- 읽을 내용은 설정 화면에서 [적용]했을 때만 바뀐다. 고친 대본은 open_settings에서 먼저 저장해 두므로, 적용 뒤에도 edits는 남아 있다.
 </behavior>
 
 <behavior name="toggle_link">
@@ -624,14 +655,15 @@ argparse(prog "ppt_reader", description "PPT 발표 자료를 소리 내어 읽�
 | 옛 형식 경고 | `'{파일명}' 형식은 읽을 수 없습니다.\nPowerPoint에서 [다른 이름으로 저장] → .pptx 로 저장한 뒤 여세요.` |
 | 열기 실패 | `파일을 열 수 없습니다.\n{경로}\n\n{예외}` |
 | 출력 장치 목록 | `시스템 기본 장치` / `시스템 기본 장치 (지금: {장치 이름})` / `{장치 이름} (연결 안 됨 - 기본 장치로 읽음)` |
-| 출력 장치 바꿈 | `이제 '{장치 이름 또는 시스템 기본 장치}'(으)로 읽습니다. 다음에 읽을 때부터 적용됩니다.` |
+| 설정 적용 | `설정을 적용했습니다. 소리는 '{장치 이름 또는 시스템 기본 장치}'(으)로 나옵니다.` |
+| 설정 화면 | 제목 `설정`, 출력 장치 안내 `목록을 펼 때마다 연결된 장치를 다시 찾습니다.` |
 | 연동 라벨 | `PowerPoint 찾는 중...` / `PowerPoint에 열린 발표 자료가 없습니다` / `{슬라이드 쇼|편집 화면} · {번호 또는 -}번 · {파일명}` / `연동 문제 발생` |
 | 쇼 종료 | `슬라이드 쇼가 끝나서 읽기를 멈췄습니다.` |
 | 경로 모름 | `PowerPoint의 '{파일명}' 파일 위치를 알 수 없습니다. 파일을 저장했는지 확인하거나 [파일 열기]로 같은 파일을 직접 여세요.` |
 | 다시 불러옴 | `PowerPoint에서 저장한 내용을 다시 불러왔습니다.` |
 | 편집 표시 | `✎ 고친 대본` |
 | 목록 항목 | `" {번호:>2}. {라벨[:30]}"`, 숨긴 장은 끝에 `"  (숨김)"`, 빈 장 라벨은 `(내용 없음)` |
-| 버튼, 체크박스 | `파일 열기...`, `PowerPoint 연동`, `항상 위`, `◀ 이전`, `▶ 읽기`, `● 읽는 중`, `■ 정지`, `다음 ▶`, `원래 내용으로`, `다 읽으면 다음 장으로 넘어가기 (자동 발표)`, `슬라이드 쇼에서 장을 넘기면 바로 읽기` |
+| 버튼, 체크박스 | `파일 열기...`, `PowerPoint 연동`, `항상 위`, `⚙ 설정`, `취소`, `적용`, `◀ 이전`, `▶ 읽기`, `● 읽는 중`, `■ 정지`, `다음 ▶`, `원래 내용으로`, `다 읽으면 다음 장으로 넘어가기 (자동 발표)`, `슬라이드 쇼에서 장을 넘기면 바로 읽기` |
 | 라벨 | `읽을 내용`, `목소리`, `출력 장치`, `속도`, `{v:.1f}배`, `읽을 대본 (여기서 고치면 고친 대로 읽습니다)` |
 </ui_strings>
 
@@ -705,10 +737,15 @@ python-pptx 기본 템플릿을 쓰고 슬라이드 크기는 13.333 x 7.5인치
   - show(5): 다시 읽지 않는다(speak 횟수가 그대로)
   - `select(0, user=True)`: `gotos == [5, 1]`, 읽기 멈춤
   - read_current를 한 뒤 edit(1): 읽기 멈춤
+- test_settings_apply_and_cancel:
+  - 처음에는 settings_open이 False다. open_settings 뒤에는 True이고, source_box가 "노트 우선 (없으면 본문)", pending_voice가 "Korean"으로 시작, pending_auto_next가 False다
+  - source_box를 1(슬라이드 본문)로, pending_voice를 "English  [en_US]"로, pending_auto_next를 True로 바꾸고 cancel_settings: settings_open False, source "notes_first", voice_var는 "Korean"으로 시작, auto_next_var False, Text에 "발표하겠습니다"가 그대로 있다
+  - 다시 open_settings: source_box.current()가 0, pending_auto_next가 False다(고르다 만 값이 남지 않음)
+  - 같은 값으로 바꾸고 apply_settings: settings_open False, source "body", auto_next_var True, Text가 "인공지능과 우리의 학교생활"로 시작, 상태가 "설정을 적용했습니다."로 시작한다. 읽으면 voice "en"으로 읽는다
 - test_output_device:
-  - 출력 장치 목록 첫 항목은 `"시스템 기본 장치 (지금: 스피커(Realtek))"`이고 그것이 골라져 있다. 읽으면 output_id는 None이다
-  - "헤드폰(Shokz)"를 고르고 `_on_output_change()`, stop 후 읽으면 output_id는 "dev-earphones"다
-  - quit한 뒤 `FakeSpeaker.connected`를 `[SPEAKERS]`로 바꾸고(monkeypatch) make_app으로 다시 띄우면 `"헤드폰(Shokz) (연결 안 됨 - 기본 장치로 읽음)"`이 골라져 있고, 읽으면 output_id는 여전히 "dev-earphones"다
+  - open_settings 뒤 출력 장치 목록 첫 항목은 `"시스템 기본 장치 (지금: 스피커(Realtek))"`이고 pending_output이 그것이다. apply_settings 후 읽으면 output_id는 None이다
+  - open_settings, pending_output을 "헤드폰(Shokz)"로, apply_settings: 상태가 `"설정을 적용했습니다. 소리는 '헤드폰(Shokz)'(으)로 나옵니다."`다. stop 후 읽으면 output_id는 "dev-earphones"다
+  - quit한 뒤 `FakeSpeaker.connected`를 `[SPEAKERS]`로 바꾸고(monkeypatch) make_app으로 다시 띄워 open_settings하면 pending_output이 `"헤드폰(Shokz) (연결 안 됨 - 기본 장치로 읽음)"`이다. apply_settings 후 읽으면 output_id는 여전히 "dev-earphones"다
 - test_powerpoint_unknown_file:
   - show(1, "Presentation1"): 상태에 "위치를 알 수 없습니다"가 들어 있다
   - show(2, `https://d.docs.live.net/x/` + 예제 파일명): 이름이 같으므로 current가 1이 된다
@@ -756,7 +793,7 @@ README.md는 한국어로 쓰고 다음 섹션을 이 순서로 둔다.
 1. 한 줄 소개: Windows와 macOS에서 같은 코드로 동작하며 인터넷 없이 읽는다는 점
 2. 할 수 있는 것: 표로 정리한다(파일 읽기 순서 규칙, 읽을 내용 4가지, 대본 고치기, PowerPoint 연동, 자동 발표, 목소리와 속도, 출력 장치)
 3. 실행하기: Python 3.9 이상 설치와 PATH 체크, Windows bat 더블클릭, macOS `bash run_mac.sh`(python.org 권장, Homebrew면 python-tk), 직접 실행 명령
-4. 사용 방법: (1) 파일만 열어서 읽기, (2) PowerPoint 연동 5단계, 저장해야 반영된다는 점, 단축키 표
+4. 사용 방법: (1) 파일만 열어서 읽기, (2) PowerPoint 연동 5단계, 저장해야 반영된다는 점, (3) 설정 화면([⚙ 설정] → 고르기 → [적용]/[취소], 적용 전에는 바뀌지 않음), 단축키 표(설정 화면의 Enter/Esc 포함)
 5. 한국어 음성 설치: Windows는 설정 → 시간 및 언어 → 음성 → 음성 추가, macOS는 손쉬운 사용 → 읽기 및 말하기 → Yuna
 6. macOS 권한: 자동화 허용 방법과 거부했을 때 다시 켜는 위치
 7. 실행 파일 만들기: OS별로 따로 빌드한다는 점, dist 결과물, 서명하지 않은 Mac 앱은 오른쪽 클릭 → 열기
@@ -781,6 +818,9 @@ README.md는 한국어로 쓰고 다음 섹션을 이 순서로 둔다.
 13. 테스트와 검증 스크립트는 사용자 홈의 설정 파일을 덮어쓰지 않는다. SETTINGS_FILE을 임시 경로로 바꿔서 실행한다.
 14. SAPI(SpVoice)는 Windows의 기본 출력 장치를 따라가지 않고 출력 목록의 첫 장치로 읽는다. 이어폰을 기본 장치로 해 둬도 스피커로 나온다. 읽을 때마다 고른 장치, 없으면 Windows의 지금 기본 장치(IMMDeviceEnumerator, eRender/eConsole)를 찾아 `AudioOutput`에 직접 지정한다. Windows의 '기본 통신 장치'는 eConsole과 다를 수 있으니 혼동하지 않는다.
 15. 화면 캡처로 검증할 때는 앱 창을 `-topmost`로 띄우고 창 영역만 찍는다. 창 밖까지 찍으면 사용자의 다른 창(메신저 등)이 찍힌다.
+16. 설정 화면의 위젯은 고르는 중인 값(pending_*)에만 묶는다. 읽기와 대본은 적용된 값(source, voice_var, output, auto_next_var, read_on_change_var)만 쓴다. 섞으면 [취소]를 눌러도 설정이 바뀌어 있다.
+17. ttk 버튼(Windows vista 테마)과 macOS의 tk.Button은 배경색 지정이 무시된다. 파란 [적용] 버튼은 PrimaryButton(tk.Label)으로 만든다.
+18. 화면 검증 스크립트에서 `after` 타이머를 여러 개 미리 걸고 그 안에서 `update()`를 부르면, 시작이 늦어졌을 때 몰린 타이머가 중첩 실행되어 순서가 꼬인다. 한 단계가 끝난 뒤 다음 단계를 `after`로 거는 식으로 차례대로 실행한다.
 </known_pitfalls>
 
 <workflow>
@@ -792,7 +832,7 @@ README.md는 한국어로 쓰고 다음 섹션을 이 순서로 둔다.
    - 프로젝트 안에 `.venv`를 만들고 python-pptx, pywin32, pytest를 설치한다
 2. slides.py, tts.py, link.py, app.py, __main__.py, __init__.py, main.py, requirements.txt를 작성한다.
 3. 예제 생성기를 실행한다. `--dump`와 `--list-voices` 출력이 <sample_deck>의 기대값과 같은지 확인한다.
-4. 테스트 10개를 작성하고 `python -m pytest -q tests`를 실행한다. 10개 모두 통과해야 한다.
+4. 테스트 11개를 작성하고 `python -m pytest -q tests`를 실행한다. 11개 모두 통과해야 한다.
 5. 실제 음성을 짧게 확인한다(소리가 나므로 짧은 문장 하나로 한정한다).
    - `--say ... --slide 6 --speed 1.5`가 끝까지 읽고 종료되는지 본다.
    - 긴 문장을 읽다가 stop하면 0.2초 안에 done(False)가 오는지 본다.
@@ -812,12 +852,13 @@ README.md는 한국어로 쓰고 다음 섹션을 이 순서로 둔다.
 
 <acceptance_criteria>
 아래를 모두 만족해야 완료다.
-- [ ] `python -m pytest -q tests`에서 10개가 통과한다
+- [ ] `python -m pytest -q tests`에서 11개가 통과한다
 - [ ] `--dump` 출력이 <sample_deck>의 기대값과 같다(4번 장에 "(숨김)" 표시가 붙는다)
 - [ ] 한국어 음성이 있는 Windows에서 `--list-voices` 첫 줄이 `*`로 시작하는 한국어 음성이고, OneCore에만 있는 같은 목소리는 중복으로 나오지 않는다
 - [ ] 슬라이드 쇼를 시작하면 첫 장을 바로 읽는다. 자동 발표가 켜져 있으면 숨긴 장을 건너뛰며 끝까지 진행하고, 쇼를 끝내면 "슬라이드 쇼가 끝나서 읽기를 멈췄습니다."가 뜬다
 - [ ] 같은 장을 두 번 읽는 일이 없다
 - [ ] 이어폰을 Windows 기본 출력 장치로 두면 '시스템 기본 장치'에서 이어폰으로 읽고, 출력 장치 목록에서 고른 장치는 다음 실행에도 유지된다
+- [ ] [⚙ 설정]을 누르면 같은 창이 설정 화면으로 바뀌고, 파란 [적용]을 눌러야 설정이 바뀐다. [취소]나 Esc는 아무것도 바꾸지 않고 메인 화면으로 돌아간다
 - [ ] 화면 배율 100%와 150% 모두에서 아래쪽 체크박스와 상태 표시줄이 잘리지 않는다
 - [ ] 이 프로그램이 띄운 PowerPoint 프로세스는 시험이 끝나면 남아 있지 않다
 - [ ] PyInstaller 결과물이 실행되고 정상 종료된다
