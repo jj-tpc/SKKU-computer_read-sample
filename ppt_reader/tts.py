@@ -13,12 +13,19 @@ import re
 import subprocess
 import sys
 import threading
+import time
 from dataclasses import dataclass
 from typing import Callable
 
 
 class TTSUnavailable(RuntimeError):
     pass
+
+
+# 블루투스 이어폰(그리고 HDMI 모니터 같은 장치)은 소리가 한동안 없으면 연결을 쉬게 했다가, 소리가 다시
+# 오면 깨어나는 동안(약 0.5초) 첫마디를 버린다. 그래서 오래 조용했다가 읽기 시작할 때는 앞에 무음을 넣는다.
+LEAD_SILENCE_MS = 1000
+IDLE_BEFORE_LEAD = 2.0  # 이만큼(초) 넘게 조용했으면 장치가 쉬고 있다고 본다
 
 
 @dataclass
@@ -45,7 +52,7 @@ _SAPI_CATEGORIES = (
     # '설정 > 음성'에서 추가한 음성은 여기에만 등록되는 경우가 있다. SAPI로도 쓸 수 있다.
     r"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Speech_OneCore\Voices",
 )
-_SVSF_ASYNC, _SVSF_PURGE, _SVSF_NOT_XML = 1, 2, 16
+_SVSF_ASYNC, _SVSF_PURGE, _SVSF_IS_XML, _SVSF_NOT_XML = 1, 2, 8, 16
 
 
 class _SapiEngine:
@@ -108,7 +115,8 @@ class _SapiEngine:
                     self._sp.AudioOutput = tok
                 return
 
-    def start(self, text: str, voice_id: str | None, speed: float, output_id: str | None = None):
+    def start(self, text: str, voice_id: str | None, speed: float, output_id: str | None = None,
+              lead_ms: int = 0):
         import win32com.client
 
         try:
@@ -126,6 +134,8 @@ class _SapiEngine:
         # SAPI 속도는 -10(1/3배) ~ +10(3배)
         self._sp.Rate = max(-10, min(10, round(10 * math.log(speed) / math.log(3))))
         self._sp.Volume = 100
+        if lead_ms:  # 무음만 XML로 따로 넣고, 본문은 그대로 NotXML로 읽는다
+            self._sp.Speak(f'<silence msec="{int(lead_ms)}"/>', _SVSF_ASYNC | _SVSF_IS_XML)
         self._sp.Speak(text, _SVSF_ASYNC | _SVSF_NOT_XML)
 
     def busy(self) -> bool:
@@ -241,14 +251,16 @@ class _SayEngine:
     def init_thread(self):
         pass
 
-    def start(self, text: str, voice_id: str | None, speed: float, output_id: str | None = None):
+    def start(self, text: str, voice_id: str | None, speed: float, output_id: str | None = None,
+              lead_ms: int = 0):
         cmd = ["say", "-r", str(int(self.BASE_WPM * speed))]
         if voice_id:
             cmd += ["-v", voice_id]
         if output_id and any(o.id == output_id for o in self.outputs()):  # 연결이 끊긴 장치면 기본 장치로
             cmd += ["-a", output_id]
-        # '-'로 시작하면 옵션으로 오해하므로 앞에 공백을 붙인다.
-        cmd.append(" " + text if text.startswith("-") else text)
+        # '-'로 시작하면 옵션으로 오해하므로 앞에 공백을 붙인다. [[slnc N]]은 say의 무음 명령이다.
+        body = " " + text if text.startswith("-") else text
+        cmd.append(f"[[slnc {int(lead_ms)}]] {body}" if lead_ms else body)
         self._proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     def busy(self) -> bool:
@@ -332,6 +344,8 @@ class Speaker:
         engine.init_thread()
         current = None
         speaking = False
+        quiet_since: float | None = None  # 마지막으로 소리가 끝난 시각. None = 아직 한 번도 안 읽음
+        last_output: object = object()
         try:
             while True:
                 try:
@@ -342,19 +356,27 @@ class Speaker:
                     if speaking:
                         engine.stop()
                         speaking = False
+                        quiet_since = time.monotonic()
                         self._on_event("done", current, False)
                     if cmd[0] == "quit":
                         return
                     if cmd[0] == "speak":
                         _, text, voice_id, speed, current, output_id = cmd
+                        # 오래 조용했거나 장치가 바뀌었으면 장치가 깨어나도록 앞에 무음을 넣는다.
+                        # 자동 발표처럼 바로 이어 읽을 때는 넣지 않아서 장 사이가 늘어지지 않는다.
+                        idle = (quiet_since is None or output_id != last_output
+                                or time.monotonic() - quiet_since > IDLE_BEFORE_LEAD)
+                        last_output = output_id
                         try:
-                            engine.start(text, voice_id, speed, output_id)
+                            engine.start(text, voice_id, speed, output_id, LEAD_SILENCE_MS if idle else 0)
                             speaking = True
                             self._on_event("start", current, None)
                         except Exception as e:  # 음성 엔진 오류는 화면에 알린다
+                            quiet_since = time.monotonic()
                             self._on_event("error", current, str(e))
                 if speaking and not engine.busy():
                     speaking = False
+                    quiet_since = time.monotonic()
                     self._on_event("done", current, engine.finished_ok())
         finally:
             engine.close_thread()

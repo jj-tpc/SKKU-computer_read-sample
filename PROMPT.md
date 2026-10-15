@@ -33,7 +33,7 @@ Windows COM, macOS AppleScript, tkinter, 운영체제 내장 TTS(SAPI, say)를 �
 아래 명세와 똑같이 동작하는 프로그램 "PPT 읽어주기"를 만든다. 결과물은 다음 다섯 가지다.
 1. `ppt_reader` 패키지(화면, 슬라이드 추출, 음성, PowerPoint 연동, 명령줄)
 2. 시연용 예제 발표 자료 생성기와 그 결과물인 `sample/sample_presentation.pptx`
-3. pytest 자동 테스트 11개
+3. pytest 자동 테스트 12개
 4. 운영체제별 실행 스크립트와 PyInstaller 빌드 설정
 5. 한국어 README.md
 </objective>
@@ -139,6 +139,9 @@ _SENTENCE_END = tuple(".?!。…:;,)]}\"'”’")
 ```python
 class TTSUnavailable(RuntimeError): ...
 
+LEAD_SILENCE_MS = 1000   # 오래 조용했다가 읽기 시작할 때 본문 앞에 넣는 무음
+IDLE_BEFORE_LEAD = 2.0   # 이만큼(초) 넘게 조용했으면 출력 장치가 쉬고 있다고 본다
+
 @dataclass
 class Voice:
     id: str
@@ -169,17 +172,21 @@ on_event(kind, tag, info)는 음성 스레드에서 호출된다. kind는 "start
 `Speaker`는 이름이 "tts"인 daemon 스레드를 하나 띄우고, 엔진이 바뀌어도 같은 루프를 쓴다.
 ```
 engine.init_thread()
-current=None; speaking=False
+current=None; speaking=False; quiet_since=None; last_output=(아무것과도 같지 않은 값)
 loop:
   cmd = queue.get(timeout=0.05) (비어 있으면 None)
   if cmd 있음:
-     if speaking: engine.stop(); speaking=False; emit("done", current, False)
+     if speaking: engine.stop(); speaking=False; quiet_since=now; emit("done", current, False)
      if quit: return
-     if speak: current=tag; try engine.start(text, voice_id, speed, output_id); speaking=True; emit("start")
-               except Exception as e: emit("error", current, str(e))
-  if speaking and not engine.busy(): speaking=False; emit("done", current, engine.finished_ok())
+     if speak: current=tag
+               idle = quiet_since is None or output_id != last_output or now - quiet_since > IDLE_BEFORE_LEAD
+               last_output = output_id
+               try engine.start(text, voice_id, speed, output_id, LEAD_SILENCE_MS if idle else 0); speaking=True; emit("start")
+               except Exception as e: quiet_since=now; emit("error", current, str(e))
+  if speaking and not engine.busy(): speaking=False; quiet_since=now; emit("done", current, engine.finished_ok())
 finally: engine.close_thread()
 ```
+now는 `time.monotonic()`이다. 블루투스 이어폰(그리고 HDMI 모니터 같은 장치)은 소리가 한동안 없으면 연결을 쉬게 했다가, 소리가 다시 오면 깨어나는 동안(약 0.5초) 첫마디를 버린다. 짧은 슬라이드 대본은 첫마디가 잘리면 거의 안 들리는 것처럼 느껴진다. 그래서 처음 읽을 때, 2초 넘게 조용했을 때, 출력 장치가 바뀌었을 때만 앞에 1초 무음을 넣는다. 자동 발표처럼 바로 이어 읽을 때는 장치가 깨어 있으므로 넣지 않아서 장 사이가 늘어지지 않는다.
 새 명령은 어떤 것이든(speak, stop, quit) 지금 읽고 있는 것을 먼저 끊는다. 그래서 이전 tag의 done(False)가 다음 start보다 항상 먼저 나온다.
 </worker_loop>
 
@@ -204,13 +211,14 @@ finally: engine.close_thread()
   4. OSError면 None. finally에서 id를 `CoTaskMemFree`하고 dev와 enum을 vtable 2번 `Release`(restype c_ulong)한다.
 - `init_thread`: `pythoncom.CoInitialize()`를 하고 `SAPI.SpVoice`를 만든 뒤 기본 음성을 기억해 둔다.
 - `_set_output(output_id)`: SAPI는 Windows에서 기본 출력 장치를 바꿔도 따라가지 않고, `GetAudioOutputs()`의 첫 장치(보통 내장 스피커)로 읽는다. 그래서 출력 장치를 매번 직접 지정한다. 지금 SpVoice의 `GetAudioOutputs()` 토큰 중에서 `output_id`, 그다음 `_default_render_endpoint()` 순서로 `_is_endpoint`가 맞는 첫 토큰을 찾는다. 찾으면 `AudioOutput.Id`가 다를 때만 `self._sp.AudioOutput = token`을 하고 끝낸다. 둘 다 없으면 그대로 둔다.
-- `start(text, voice_id, speed, output_id=None)`:
+- `start(text, voice_id, speed, output_id=None, lead_ms=0)`:
   0. `_set_output(output_id)`. 예외가 나면 무시하고 SAPI가 쓰던 장치로 읽는다.
   1. 먼저 기본 음성으로 되돌린다.
   2. voice_id가 있으면 `SAPI.SpObjectToken`에 `SetId(voice_id, "", False)`를 해서 지정한다. 실패하면 조용히 기본 음성을 쓴다.
   3. `Rate = clamp(round(10*ln(speed)/ln(3)), -10, 10)`. SAPI 속도는 -10이 1/3배, +10이 3배다.
   4. `Volume = 100`
-  5. `Speak(text, SVSFlagsAsync(1) | SVSFIsNotXML(16))`. NotXML이 없으면 본문의 "<"를 SAPI가 XML로 해석한다.
+  5. lead_ms가 있으면 먼저 `Speak(f'<silence msec="{lead_ms}"/>', SVSFlagsAsync(1) | SVSFIsXML(8))`로 무음만 XML로 넣는다.
+  6. `Speak(text, SVSFlagsAsync(1) | SVSFIsNotXML(16))`. NotXML이 없으면 본문의 "<"를 SAPI가 XML로 해석한다. 두 Speak는 같은 음성의 대기열에 차례로 들어가므로 busy(WaitUntilDone)와 stop(PURGE)이 둘 다에 적용된다.
 - `busy()`는 `not WaitUntilDone(0)`, `finished_ok()`는 항상 True다.
 - `stop()`은 `Speak("", SVSFlagsAsync(1) | SVSFPurgeBeforeSpeak(2))`다.
 - `close_thread()`는 참조를 버리고 `CoUninitialize()`를 한다.
@@ -221,7 +229,7 @@ finally: engine.close_thread()
 - voices: `say -v ?`를 실행한다(utf-8, timeout 15초, 실패하면 []). 줄마다 정규식 `r"^(.+?)\s+([a-z]{2,3}[_-][A-Za-z0-9]+)\s+#"`를 적용한다. id와 name은 모두 1번 그룹을 strip한 값, lang은 2번 그룹이다.
 - outputs: `say -a ?`를 실행한다(utf-8, timeout 15초, 실패하면 []). 줄마다 정규식 `r"^\s*\d+\s+(.+?)\s*$"`를 적용하고 id와 name 모두 1번 그룹(장치 이름)이다. 앞의 숫자 ID는 재부팅하면 바뀔 수 있어서 쓰지 않는다.
 - default_output: 항상 None이다. say는 언제나 macOS의 지금 기본 출력 장치로 읽는다.
-- start(text, voice_id, speed, output_id=None): `["say", "-r", str(int(190*speed))]`로 시작하고, voice_id가 있으면 `["-v", voice_id]`를 붙인다. output_id가 있고 지금 outputs에 같은 id가 있을 때만 `["-a", output_id]`를 붙인다(연결이 끊긴 장치면 기본 장치로 읽는다). 마지막에 본문을 붙이는데, 본문이 "-"로 시작하면 옵션으로 오해하지 않도록 앞에 공백 하나를 붙인다. `Popen`으로 실행하고 stdout과 stderr는 DEVNULL로 보낸다.
+- start(text, voice_id, speed, output_id=None, lead_ms=0): `["say", "-r", str(int(190*speed))]`로 시작하고, voice_id가 있으면 `["-v", voice_id]`를 붙인다. output_id가 있고 지금 outputs에 같은 id가 있을 때만 `["-a", output_id]`를 붙인다(연결이 끊긴 장치면 기본 장치로 읽는다). 마지막에 본문을 붙이는데, 본문이 "-"로 시작하면 옵션으로 오해하지 않도록 앞에 공백 하나를 붙인다. lead_ms가 있으면 본문 앞에 say의 무음 명령 `f"[[slnc {lead_ms}]] "`를 붙인다. `Popen`으로 실행하고 stdout과 stderr는 DEVNULL로 보낸다.
 - busy는 `poll() is None`, finished_ok는 `returncode == 0`이다.
 - stop은 `terminate()`, 2초 동안 `wait`, 그래도 안 끝나면 `kill()`이다. close_thread는 stop을 부른다.
 - 그 밖의 OS에서는 `TTSUnavailable("이 프로그램은 Windows와 macOS에서 동작합니다.")`를 던진다.
@@ -710,6 +718,14 @@ python-pptx 기본 템플릿을 쓰고 슬라이드 크기는 13.333 x 7.5인치
   - 실제 파일이면 그 경로를, "Presentation1"이면 None을 돌려준다
   - 환경변수 OneDrive를 tmp_path로 두면 `https://d.docs.live.net/abc123/Docs/%EB%B0%9C%ED%91%9C.pptx`가 `tmp_path/Docs/발표.pptx`로 풀린다
 </file>
+<file name="tests/test_tts.py">
+실제 음성 엔진 대신 FakeEngine을 `tts._make_engine`에 monkeypatch한다. FakeEngine.start는 (text, output_id, lead_ms)를 기록하고, busy는 항상 False라서 바로 다 읽은 것으로 친다.
+- test_lead_silence_only_after_quiet: speak하고 같은 tag의 done을 기다리는 보조 함수로 차례로 읽는다.
+  - 처음 읽으면 lead_ms == LEAD_SILENCE_MS
+  - 바로 이어서 읽으면 0
+  - output_id를 "ear"로 바꿔 읽으면 LEAD_SILENCE_MS
+  - `IDLE_BEFORE_LEAD`를 0.0으로 monkeypatch하고 같은 장치로 읽으면 LEAD_SILENCE_MS
+</file>
 <file name="tests/test_app_logic.py">
 실제 소리와 PowerPoint를 쓰지 않는다.
 - FakeSpeaker: voices는 en, ko 두 개다. 클래스 속성 `connected = [SPEAKERS("dev-speakers", "스피커(Realtek)"), EARPHONES("dev-earphones", "헤드폰(Shokz)")]`를 outputs로 돌려주고, default_output은 SPEAKERS다. speak 호출을 (text, tag, voice_id)로, output_id는 따로 outputs_used에 기록하고, stop 횟수를 센다.
@@ -797,7 +813,7 @@ README.md는 한국어로 쓰고 다음 섹션을 이 순서로 둔다.
 5. 한국어 음성 설치: Windows는 설정 → 시간 및 언어 → 음성 → 음성 추가, macOS는 손쉬운 사용 → 읽기 및 말하기 → Yuna
 6. macOS 권한: 자동화 허용 방법과 거부했을 때 다시 켜는 위치
 7. 실행 파일 만들기: OS별로 따로 빌드한다는 점, dist 결과물, 서명하지 않은 Mac 앱은 오른쪽 클릭 → 열기
-8. 문제 해결 표(이어폰을 꽂았는데 스피커로 나오는 경우 포함)와 명령줄 도구(--list-voices, --list-outputs, --dump, --say, --probe-ppt)
+8. 문제 해결 표(이어폰을 꽂았는데 스피커로 나오는 경우, 블루투스 이어폰에서 첫마디가 잘리는 경우 포함)와 명령줄 도구(--list-voices, --list-outputs, --dump, --say, --probe-ppt)
 9. 구조: 파일 트리와 스레드 구성, 확인 주기(0.4초, 0.7초)
 </readme>
 
@@ -821,6 +837,7 @@ README.md는 한국어로 쓰고 다음 섹션을 이 순서로 둔다.
 16. 설정 화면의 위젯은 고르는 중인 값(pending_*)에만 묶는다. 읽기와 대본은 적용된 값(source, voice_var, output, auto_next_var, read_on_change_var)만 쓴다. 섞으면 [취소]를 눌러도 설정이 바뀌어 있다.
 17. ttk 버튼(Windows vista 테마)과 macOS의 tk.Button은 배경색 지정이 무시된다. 파란 [적용] 버튼은 PrimaryButton(tk.Label)으로 만든다.
 18. 화면 검증 스크립트에서 `after` 타이머를 여러 개 미리 걸고 그 안에서 `update()`를 부르면, 시작이 늦어졌을 때 몰린 타이머가 중첩 실행되어 순서가 꼬인다. 한 단계가 끝난 뒤 다음 단계를 `after`로 거는 식으로 차례대로 실행한다.
+19. 블루투스 이어폰은 쉬다가 깨어나는 동안 첫마디(약 0.5초)를 버린다. 재생 방식(SAPI 22kHz 모노, 48kHz 스테레오, WAV 재생)을 바꿔도 똑같이 잘리므로 출력 형식을 바꾸지 말고, <worker_loop>대로 오래 조용했을 때만 앞에 무음을 넣는다. Windows의 레벨 미터(IAudioMeterInformation)는 이어폰이 버린 소리도 '나갔다'고 보여 주므로, 첫마디가 들리는지는 사람이 직접 들어서 확인해야 한다.
 </known_pitfalls>
 
 <workflow>
@@ -832,7 +849,7 @@ README.md는 한국어로 쓰고 다음 섹션을 이 순서로 둔다.
    - 프로젝트 안에 `.venv`를 만들고 python-pptx, pywin32, pytest를 설치한다
 2. slides.py, tts.py, link.py, app.py, __main__.py, __init__.py, main.py, requirements.txt를 작성한다.
 3. 예제 생성기를 실행한다. `--dump`와 `--list-voices` 출력이 <sample_deck>의 기대값과 같은지 확인한다.
-4. 테스트 11개를 작성하고 `python -m pytest -q tests`를 실행한다. 11개 모두 통과해야 한다.
+4. 테스트 12개를 작성하고 `python -m pytest -q tests`를 실행한다. 12개 모두 통과해야 한다.
 5. 실제 음성을 짧게 확인한다(소리가 나므로 짧은 문장 하나로 한정한다).
    - `--say ... --slide 6 --speed 1.5`가 끝까지 읽고 종료되는지 본다.
    - 긴 문장을 읽다가 stop하면 0.2초 안에 done(False)가 오는지 본다.
@@ -852,12 +869,13 @@ README.md는 한국어로 쓰고 다음 섹션을 이 순서로 둔다.
 
 <acceptance_criteria>
 아래를 모두 만족해야 완료다.
-- [ ] `python -m pytest -q tests`에서 11개가 통과한다
+- [ ] `python -m pytest -q tests`에서 12개가 통과한다
 - [ ] `--dump` 출력이 <sample_deck>의 기대값과 같다(4번 장에 "(숨김)" 표시가 붙는다)
 - [ ] 한국어 음성이 있는 Windows에서 `--list-voices` 첫 줄이 `*`로 시작하는 한국어 음성이고, OneCore에만 있는 같은 목소리는 중복으로 나오지 않는다
 - [ ] 슬라이드 쇼를 시작하면 첫 장을 바로 읽는다. 자동 발표가 켜져 있으면 숨긴 장을 건너뛰며 끝까지 진행하고, 쇼를 끝내면 "슬라이드 쇼가 끝나서 읽기를 멈췄습니다."가 뜬다
 - [ ] 같은 장을 두 번 읽는 일이 없다
 - [ ] 이어폰을 Windows 기본 출력 장치로 두면 '시스템 기본 장치'에서 이어폰으로 읽고, 출력 장치 목록에서 고른 장치는 다음 실행에도 유지된다
+- [ ] 블루투스 이어폰으로 처음 읽을 때와 한참 쉬었다가 읽을 때 첫마디가 잘리지 않는다. 바로 이어 읽을 때는 앞에 무음이 들어가지 않는다
 - [ ] [⚙ 설정]을 누르면 같은 창이 설정 화면으로 바뀌고, 파란 [적용]을 눌러야 설정이 바뀐다. [취소]나 Esc는 아무것도 바꾸지 않고 메인 화면으로 돌아간다
 - [ ] 화면 배율 100%와 150% 모두에서 아래쪽 체크박스와 상태 표시줄이 잘리지 않는다
 - [ ] 이 프로그램이 띄운 PowerPoint 프로세스는 시험이 끝나면 남아 있지 않다
