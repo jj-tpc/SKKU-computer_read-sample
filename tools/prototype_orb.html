@@ -216,7 +216,6 @@
     <div class="row" id="bubrow2"><b>보여 주기</b>
       <button data-obm="stream">스트림·이어서</button><button data-obm="streamS">스트림·문장마다</button>
       <button data-obm="one">한 문장·3초</button><button data-obm="stack">쌓임·3초</button><button data-obm="page">쪽수·5초</button></div>
-    <div class="row"><b>위성 배치</b><button data-sats="arc">한 줄 호</button><button data-sats="rings">두 겹 (안 4 · 밖)</button></div>
     <div class="row"><b>배경</b><button data-bg="light">흰 슬라이드</button><button data-bg="dark">어두운 슬라이드</button></div>
     <div class="now" id="now"></div>
     <div class="now">원 버튼을 눌러 위성 버튼을 펼치세요. [질문하기]로 질문을 보내면 생각 중 → 말하는 중으로 넘어갑니다.</div>
@@ -253,7 +252,7 @@ const KEYS = Object.keys(VARIANTS);
 
 // ---------------------------------------------------------------- 상태
 const st = { vk: KEYS.includes(new URLSearchParams(location.search).get("variant")) ? new URLSearchParams(location.search).get("variant") : "D",
-             mode: "idle", speed: 0, effort: 0, expanded: false, askOpen: false, collapseMs: 4000, sats: new URLSearchParams(location.search).get("sats") === "rings" ? "rings" : "arc",
+             mode: "idle", speed: 0, effort: 0, expanded: false, askOpen: false, collapseMs: 4000,
              utter: null, answerIdx: 0, bubbleUntil: 0, sentences: [], cPage: 0,
              obMode: ["stream", "streamS", "one", "stack", "page"].includes(new URLSearchParams(location.search).get("obm")) ? new URLSearchParams(location.search).get("obm") : "stream",
              obStyle: ["wave", "deep", "coral", "glass"].includes(new URLSearchParams(location.search).get("ob")) ? new URLSearchParams(location.search).get("ob") : "coral" };
@@ -432,7 +431,6 @@ const SAT_ITEMS = () => [
   { key: "ask", A: "?", B: ["?", "질문하기"], C: "질문", tip: "질문하기" },
   { key: "read", A: st.mode === "reading" ? "■" : "▶", B: [st.mode === "reading" ? "■" : "▶", st.mode === "reading" ? "정지" : "읽기"], C: st.mode === "reading" ? "정지" : "읽기", tip: st.mode === "reading" ? "정지" : "읽기" },
   { key: "speed", A: "x" + SPEEDS[st.speed], B: ["x", "배속 x" + SPEEDS[st.speed]], C: "x" + SPEEDS[st.speed], tip: "배속 (누를 때마다 바뀜)" },
-  { key: "files", A: "📂", B: ["📂", "발표 자료"], C: "자료", tip: "발표 자료 (파일·대본)" },
   { key: "settings", A: "⚙", B: ["⚙", "설정"], C: "설정", tip: "설정" },
   { key: "quit", A: "✕", B: ["✕", "끝내기"], C: "끝내기", tip: "끝내기" },
 ];
@@ -493,12 +491,7 @@ function build() {
     SAT_ITEMS().forEach((it, i) => {
       const b = document.createElement("button"); b.className = `sat A${theme} hidden`;
       b.innerHTML = `${it.A}<span class="tip">${it.tip}</span>`;
-      // 한 줄 호: 여섯 개가 46px 동그라미로 겹치지 않으려면 반지름이 170px은 되어야 한다(가운데 사이 약 53px).
-      // 두 겹: 자주 쓰는 앞의 네 개는 안쪽 호(반지름 105px, 30도 간격), 나머지는 바깥 호(175px)에서 안쪽 버튼 사이사이에 엇갈려 놓는다.
-      const n = SAT_ITEMS().length, outer = n - 4;
-      const [a, r] = st.sats === "arc" ? [Math.PI + (i / (n - 1)) * (Math.PI / 2), 170]
-        : i < 4 ? [Math.PI + i * (Math.PI / 6), 105]
-        : [Math.PI + (outer === 3 ? [1, 3, 5][i - 4] : outer === 2 ? [1.5, 4.5][i - 4] : 3) * (Math.PI / 12), 175];
+      const a = Math.PI + (i / 4) * (Math.PI / 2), r = 132;
       b.dataset.x = cx + Math.cos(a) * r - 23; b.dataset.y = cy + Math.sin(a) * r - 23;
       b.style.left = (cx - 23) + "px"; b.style.top = (cy - 23) + "px";
       b.onclick = e => { e.stopPropagation(); press(it.key); };
@@ -579,7 +572,6 @@ function press(key) {
   if (key === "ask") { collapse(); openAsk(); return; }
   if (key === "read") { setMode(st.mode === "reading" ? "idle" : "reading"); rebuildKeep(); restartTimer(); return; }
   if (key === "speed") { st.speed = (st.speed + 1) % SPEEDS.length; toast("배속 x" + SPEEDS[st.speed]); rebuildKeep(); restartTimer(); return; }
-  if (key === "files") { collapse(); toast("발표 자료 창이 열립니다 (설정 창 시제품 참고)"); return; }
   if (key === "settings") { collapse(); toast("설정 창이 열립니다 (시제품에서는 생략)"); return; }
   if (key === "quit") { collapse(); toast("프로그램을 끝냅니다 (시제품에서는 생략)"); }
 }
@@ -752,10 +744,6 @@ for (const [attr, field] of [["obs", "obStyle"], ["obm", "obMode"]]) {
   document.querySelector(`#panel [data-${attr}="${st[field]}"]`).classList.add("on");
 }
 document.querySelector('#panel [data-col="4000"]').classList.add("on");
-document.querySelectorAll("#panel [data-sats]").forEach(b => {
-  b.classList.toggle("on", b.dataset.sats === st.sats);
-  b.onclick = () => { st.sats = b.dataset.sats; document.querySelectorAll("#panel [data-sats]").forEach(x => x.classList.toggle("on", x === b)); rebuildKeep(); if (!st.expanded) expand(); };
-});
 document.querySelector('#panel [data-bg="light"]').classList.add("on");
 
 function go(d) {
