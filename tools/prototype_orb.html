@@ -1,0 +1,765 @@
+<!doctype html>
+<!--
+  시제품 — 원 버튼, 위성 버튼, 질문창, 생각 깊이 버튼, 강아지 말풍선 (버려도 되는 코드, 제품에 들어가지 않는다).
+  계획: 전체 화면 슬라이드 쇼 위에서 네 가지 안(A 궤도 / B 물방울 / C 음파 링 / D 혼합)을 ?variant= 로 바꿔 본다.
+  D는 발표자가 고른 조합이다: C의 음파 링을 코랄 그라데이션으로 칠하고, 위성 버튼과 질문창은 A를 따른다.
+  D의 말풍선은 오션·코랄 컨셉으로 네 가지(파도/심해/산호/바다 유리)를 조작판에서 바꿔 본다. 발표자는 산호를 골랐다.
+  스트림 보여 주기는 목소리가 읽기 시작한 낱말까지만 보여 준다(이어서: 세 줄을 넘으면 위로 밀림 / 문장마다: 문장이 바뀌면 비움).
+  더블클릭해서 브라우저로 연다. 목소리 신호는 가짜로 만든다.
+-->
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>원 버튼 시제품</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; font-family: "Malgun Gothic", "Apple SD Gothic Neo", system-ui, sans-serif; }
+  body { background: #fff; color: #1d2330; }
+  body.dark { background: #1f2430; color: #eef1f6; }
+
+  /* 가짜 슬라이드 쇼 화면 */
+  #slide { position: absolute; inset: 0; padding: 7vh 8vw; }
+  #slide h1 { font-size: 5.2vh; margin: 0 0 4vh; }
+  #slide ul { font-size: 3.2vh; line-height: 1.8; margin: 0; padding-left: 1.2em; }
+  #slide .num { position: absolute; right: 3vw; top: 3vh; font-size: 2vh; opacity: .5; }
+
+  #dog { position: fixed; left: 0; top: 0; pointer-events: none; image-rendering: pixelated; z-index: 5; }
+
+  /* 강아지 말풍선 — 안마다 모양이 다르다 */
+  #bubble { position: fixed; z-index: 6; pointer-events: none; display: none; max-width: 300px; }
+  #bubble.v-A { background: #fff; color: #1d2330; border-radius: 16px; padding: 10px 14px; font-size: 15px; line-height: 1.5;
+                box-shadow: 0 6px 18px rgba(0,0,0,.18), 0 0 0 1px rgba(0,0,0,.06); }
+  #bubble.v-A::after { content: ""; position: absolute; left: 22px; bottom: -9px; border: 9px solid transparent; border-top-color: #fff; border-bottom: 0; }
+  #bubble.v-A p { margin: 0; transition: opacity .4s; }
+  #bubble.v-A p.old { opacity: .45; }
+  #bubble.v-B { background: rgba(17,24,39,.88); color: #fff; border-radius: 12px; padding: 10px 16px; font-size: 18px; line-height: 1.45; max-width: 360px; }
+  #bubble.v-B::after { content: ""; position: absolute; left: 24px; bottom: -8px; border: 8px solid transparent; border-top-color: rgba(17,24,39,.88); border-bottom: 0; }
+  #bubble.v-C { background: #fff; color: #2a1a10; border: 3px solid #3A2216; box-shadow: 4px 4px 0 #3A2216; padding: 8px 12px 6px; font-size: 15px; line-height: 1.5; font-weight: 600; }
+  #bubble.v-C::after { content: ""; position: absolute; left: 20px; bottom: -12px; width: 12px; height: 12px; background: #fff;
+                       border-right: 3px solid #3A2216; border-bottom: 3px solid #3A2216; transform: skewX(-25deg); }
+  #bubble.v-C .page { display: block; text-align: right; font-size: 11px; opacity: .6; margin-top: 2px; }
+
+  /* 원 버튼 묶음 */
+  #ui { position: fixed; right: 0; bottom: 0; width: 0; height: 0; z-index: 10; }
+  .orb { position: fixed; cursor: pointer; }
+  .orb canvas { position: absolute; pointer-events: none; }
+  .sat { position: fixed; border: 0; cursor: pointer; font: inherit; user-select: none;
+         transition: left .3s cubic-bezier(.2,.9,.3,1.3), top .3s cubic-bezier(.2,.9,.3,1.3), bottom .3s cubic-bezier(.2,.9,.3,1.2), opacity .2s; }
+  .sat.hidden { opacity: 0; pointer-events: none; }
+  .tip { position: absolute; left: 50%; top: calc(100% + 6px); transform: translateX(-50%); white-space: nowrap; font-size: 12px;
+         background: rgba(17,24,39,.85); color: #fff; padding: 2px 7px; border-radius: 6px; opacity: 0; transition: opacity .15s; pointer-events: none; }
+  .sat:hover .tip { opacity: 1; }
+
+  /* A 궤도: 동그란 위성이 부채꼴로 */
+  .sat.A { width: 46px; height: 46px; border-radius: 50%; background: #fff; color: #2F6FED; font-size: 17px; font-weight: 700;
+           box-shadow: 0 4px 12px rgba(0,0,0,.18), 0 0 0 1px rgba(47,111,237,.25); }
+  .sat.A:hover { background: #EEF3FF; }
+  /* B 물방울: 글자가 있는 알약이 위로 쌓임 */
+  .sat.B { height: 40px; padding: 0 16px 0 12px; border-radius: 999px; background: rgba(255,255,255,.96); color: #1d2a4a; font-size: 14px; font-weight: 600;
+           box-shadow: 0 4px 14px rgba(0,0,0,.18); display: flex; gap: 8px; align-items: center; white-space: nowrap; }
+  .sat.B .ic { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; background: linear-gradient(135deg,#22D3EE,#3B82F6); color: #fff; font-size: 12px; }
+  .sat.B:hover { background: #fff; }
+  /* C 음파 링: 원 둘레의 부채 조각 (SVG) */
+  #pie { position: fixed; z-index: 9; pointer-events: none; transition: opacity .2s, transform .28s cubic-bezier(.2,.9,.3,1.2); }
+  #pie.hidden { opacity: 0; transform: scale(.6); }
+  #pie.hidden path { pointer-events: none; }
+  #pie path { pointer-events: auto; cursor: pointer; fill: rgba(15,27,61,.92); stroke: #3B82F6; stroke-width: 1.5; }
+  #pie path:hover { fill: #1E3A8A; }
+  #pie text { fill: #E0ECFF; font-size: 12px; font-weight: 600; pointer-events: none; }
+
+  /* 질문창 */
+  .ask { position: fixed; z-index: 11; transition: opacity .2s, transform .25s cubic-bezier(.2,.9,.3,1.1); }
+  .ask.hidden { opacity: 0; pointer-events: none; transform: translateX(24px); }
+  .ask input, .ask textarea { font: inherit; border: 0; outline: 0; background: transparent; color: inherit; resize: none; }
+  .ask.A { height: 48px; width: 360px; border-radius: 999px; background: #fff; color: #1d2330; display: flex; align-items: center; padding: 0 6px 0 18px;
+           box-shadow: 0 6px 20px rgba(0,0,0,.2), 0 0 0 2px #2F6FED; }
+  .ask.A input { flex: 1; font-size: 15px; }
+  .ask.A .send { width: 36px; height: 36px; border-radius: 50%; border: 0; background: #2F6FED; color: #fff; font-size: 16px; cursor: pointer; }
+  .ask.B { width: 380px; border-radius: 16px; background: #fff; color: #1d2330; padding: 12px 14px; box-shadow: 0 10px 30px rgba(0,0,0,.25); }
+  .ask.B header { display: flex; justify-content: space-between; align-items: center; font-weight: 700; font-size: 14px; margin-bottom: 6px; }
+  .ask.B header button { border: 0; background: none; font-size: 16px; cursor: pointer; color: #667085; }
+  .ask.B textarea { width: 100%; font-size: 15px; line-height: 1.5; }
+  .ask.B footer { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; font-size: 12px; color: #667085; }
+  .ask.B .send { border: 0; border-radius: 999px; padding: 7px 16px; background: linear-gradient(135deg,#22D3EE,#3B82F6); color: #fff; font-weight: 700; cursor: pointer; }
+  .ask.C { height: 56px; border-radius: 999px; background: #0F1B3D; color: #E0ECFF; display: flex; align-items: center; padding: 0 70px 0 22px;
+           box-shadow: 0 6px 20px rgba(0,0,0,.3), inset 0 0 0 2px #3B82F6; transform-origin: right center; }
+  .ask.C.hidden { transform: scaleX(.15); }
+  .ask.C input { flex: 1; font-size: 15px; }
+  .ask.C input::placeholder { color: #8FA8D8; }
+  .ask.C .send { border: 0; background: none; color: #93C5FD; font-size: 18px; cursor: pointer; margin-right: 6px; }
+
+  /* 생각 깊이 알약 */
+  .effort { position: fixed; z-index: 12; height: 32px; padding: 0 12px; border-radius: 999px; border: 0; cursor: pointer; font: inherit; font-size: 13px; font-weight: 700;
+            display: flex; align-items: center; gap: 8px; transition: opacity .2s, transform .3s; box-shadow: 0 4px 12px rgba(0,0,0,.18); }
+  .effort.hidden { opacity: 0; pointer-events: none; transform: translateY(8px); }
+  .effort .lv { display: inline-flex; gap: 3px; }
+  .effort .lv i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: .25; }
+  .effort .lv i.on { opacity: 1; }
+  .effort .val { display: inline-block; min-width: 30px; text-align: left; }
+  .effort.spin .val { animation: swap .32s ease; }
+  @keyframes swap { 0% { transform: rotateX(0); } 50% { transform: rotateX(90deg); opacity: .2; } 100% { transform: rotateX(0); } }
+  .effort.A { background: #fff; color: #2F6FED; box-shadow: 0 4px 12px rgba(0,0,0,.18), 0 0 0 1px rgba(47,111,237,.3); }
+  .effort.B { background: linear-gradient(135deg,#22D3EE,#3B82F6); color: #fff; }
+  .effort.C { background: #0F1B3D; color: #93C5FD; box-shadow: inset 0 0 0 2px #3B82F6, 0 4px 12px rgba(0,0,0,.25); }
+
+  /* D 혼합: A 모양의 위성 버튼, 질문창, 생각 깊이 알약을 코랄로 칠한다 */
+  .coral.sat.A { color: #F0565E; box-shadow: 0 4px 12px rgba(0,0,0,.18), 0 0 0 1px rgba(255,111,97,.4); }
+  .coral.sat.A:hover { background: #FFF1EE; }
+  .coral.ask.A { box-shadow: 0 6px 20px rgba(0,0,0,.2), 0 0 0 2px #FF6F61; }
+  .coral.ask.A .send { background: linear-gradient(135deg, #FF9E6D, #FF6F61 55%, #E8466E); }
+  .coral.effort.A { color: #F0565E; box-shadow: 0 4px 12px rgba(0,0,0,.18), 0 0 0 1px rgba(255,111,97,.45); }
+  .coral .tip { background: rgba(11,58,83,.94); font-size: 13px; padding: 3px 9px; }
+
+  /* D안 말풍선: 오션·코랄. 바다색 #0B3A53 #0E6BA8 #2BB3C0, 산호색 #FF9E6D #FF6F61 #E8466E */
+  #obubble { position: fixed; z-index: 6; pointer-events: none; max-width: 320px; opacity: 0; transform: translateY(10px) scale(.94);
+             transform-origin: 30px 100%; transition: opacity .25s, transform .4s cubic-bezier(.2,.9,.3,1.3); }
+  #obubble.show { opacity: 1; transform: none; }
+  #obubble .float { position: relative; animation: bob 3.2s ease-in-out infinite; }
+  @keyframes bob { 50% { transform: translateY(-3px); } }
+  #obubble .in { position: relative; overflow: hidden; padding: 11px 16px; font-size: 16px; line-height: 1.5; border-radius: 18px; word-break: keep-all; }
+  /* 스트림: 너비를 고정해서 낱말이 붙을 때 말풍선이 옆으로 출렁이지 않게 한다. 세 줄이 넘으면 위로 밀어 올리고 맨 윗줄을 흐린다. */
+  #obubble.stream .in { width: 300px; }
+  #obubble .cap { max-height: 72px; overflow: hidden; }
+  #obubble .cap.over { -webkit-mask-image: linear-gradient(transparent, #000 45%); mask-image: linear-gradient(transparent, #000 45%); }
+  #obubble .track { transition: transform .3s ease-out; }
+  #obubble .track span { display: inline-block; }
+  #obubble .track .w-new { animation: wordin .28s ease-out; }
+  @keyframes wordin { from { opacity: 0; transform: translateY(4px); filter: blur(2px); } }
+  #obubble p { margin: 0; }
+  #obubble p.new { animation: rise .35s ease-out; }
+  #obubble p.old { opacity: .5; font-size: 14px; }
+  @keyframes rise { from { opacity: 0; transform: translateY(6px); } }
+  #obubble .dots { display: flex; gap: 5px; justify-content: flex-end; margin-top: 6px; }
+  #obubble .dots i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: .25; }
+  #obubble .dots i.on { opacity: 1; background: #FF6F61; }
+  #obubble .tail { position: absolute; left: 24px; top: 100%; }
+  #obubble .tail::before { content: ""; position: absolute; left: 0; top: -1px; border: 9px solid transparent; border-bottom: 0; border-top-color: var(--tail); }
+  #obubble .tail i { display: none; }
+  /* 파도: 흰 카드 아래로 바닷물이 출렁인다. 물결 높이가 목소리를 따른다. */
+  #obubble.ob-wave { --tail: #0E6BA8; }
+  #obubble.ob-wave .in { background: #fff; color: #0B3A53; padding-bottom: 22px; box-shadow: 0 8px 22px rgba(11,58,83,.2), 0 0 0 1px rgba(14,107,168,.14); }
+  #obubble.ob-wave .wavebox { position: absolute; left: 0; right: 0; bottom: 0; height: 14px; transform-origin: bottom;
+                      transform: scaleY(calc(.45 + var(--lv, 0) * 1.3)); }
+  #obubble.ob-wave .wavebox svg { display: block; animation: drift 2.4s linear infinite; }
+  @keyframes drift { to { transform: translateX(-40px); } }
+  /* 심해: 깊은 바다색 카드에 산호빛 테두리, 안에서 기포가 올라가고 꼬리는 기포 세 개 */
+  #obubble.ob-deep .in { background: linear-gradient(160deg, #0E5E84, #0B3A53 70%); color: #EAF8FB;
+                 box-shadow: 0 8px 24px rgba(6,40,61,.35), inset 0 0 0 1.5px rgba(255,111,97,.8); }
+  #obubble.ob-deep .tail::before { display: none; }
+  #obubble.ob-deep .tail i { display: block; position: absolute; border-radius: 50%; background: #0B3A53; box-shadow: inset 0 0 0 1.5px rgba(255,111,97,.8); }
+  #obubble.ob-deep .tail i:nth-child(1) { width: 12px; height: 12px; left: 0; top: 5px; }
+  #obubble.ob-deep .tail i:nth-child(2) { width: 8px; height: 8px; left: 9px; top: 20px; }
+  #obubble.ob-deep .tail i:nth-child(3) { width: 5px; height: 5px; left: 15px; top: 31px; }
+  #obubble.ob-deep .air i { position: absolute; bottom: -8px; width: 6px; height: 6px; border-radius: 50%; border: 1px solid rgba(234,248,251,.65); animation: up 3.6s linear infinite; }
+  #obubble.ob-deep .air i:nth-child(1) { left: 14%; }
+  #obubble.ob-deep .air i:nth-child(2) { left: 58%; width: 4px; height: 4px; animation-delay: 1.2s; }
+  #obubble.ob-deep .air i:nth-child(3) { left: 86%; animation-delay: 2.4s; }
+  @keyframes up { 0% { transform: translateY(0); opacity: 0; } 15% { opacity: .9; } 100% { transform: translateY(-90px); opacity: 0; } }
+  /* 산호: 산호빛 그라데이션, 모서리가 조금씩 다른 둥근 돌 모양, 그림자는 바다색 */
+  #obubble.ob-coral { --tail: #F2545B; }
+  #obubble.ob-coral .in { background: linear-gradient(135deg, #FF7A59, #F2545B 55%, #D93D6A); color: #fff; font-weight: 600;
+                  border-radius: 26px 20px 24px 14px / 20px 26px 18px 22px; box-shadow: 0 10px 24px rgba(14,107,168,.3); }
+  #obubble.ob-coral p.old { opacity: .7; }
+  #obubble.ob-coral .dots i.on { background: #fff; }
+  /* 바다 유리: 물빛 반투명 유리에 산호빛 세로줄 */
+  #obubble.ob-glass { --tail: rgba(214,243,246,.92); }
+  #obubble.ob-glass .in { background: rgba(214,243,246,.8); -webkit-backdrop-filter: blur(12px) saturate(160%); backdrop-filter: blur(12px) saturate(160%);
+                  color: #0B3A53; border: 1px solid rgba(255,255,255,.85); box-shadow: 0 8px 24px rgba(14,107,168,.25); padding-left: 22px; }
+  #obubble.ob-glass .in::before { content: ""; position: absolute; left: 9px; top: 12px; bottom: 12px; width: 4px; border-radius: 4px; background: linear-gradient(#FF9E6D, #E8466E); }
+
+  #toast { position: fixed; left: 50%; top: 22px; transform: translateX(-50%); background: rgba(17,24,39,.9); color: #fff; padding: 8px 14px; border-radius: 8px;
+           font-size: 14px; z-index: 40; opacity: 0; transition: opacity .2s; pointer-events: none; }
+
+  /* 시제품 조작판 — 평가 대상 화면이 아님 */
+  #panel { position: fixed; left: 12px; top: 12px; z-index: 30; background: rgba(17,24,39,.92); color: #fff; border-radius: 10px; padding: 10px 12px; font-size: 12px; width: 300px; }
+  #panel h4 { margin: 0 0 6px; font-size: 12px; display: flex; justify-content: space-between; }
+  #panel h4 button { background: none; border: 0; color: #9CA3AF; cursor: pointer; }
+  #panel .row { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin: 6px 0; }
+  #panel .row b { width: 64px; font-weight: 600; color: #9CA3AF; }
+  #panel .row button { background: #374151; color: #fff; border: 0; border-radius: 6px; padding: 3px 7px; cursor: pointer; font: inherit; }
+  #panel .row button.on { background: #2F6FED; }
+  #panel .now { color: #9CA3AF; margin-top: 4px; }
+  #panel.min .body { display: none; }
+  #switcher { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; background: #111827; color: #fff;
+              border-radius: 999px; padding: 8px 10px; box-shadow: 0 6px 20px rgba(0,0,0,.3); font-size: 14px; z-index: 30; }
+  #switcher button { width: 32px; height: 32px; border-radius: 50%; border: 0; background: #374151; color: #fff; cursor: pointer; }
+  #switcher .label { min-width: 190px; text-align: center; font-weight: 600; }
+</style>
+</head>
+<body>
+<div id="slide">
+  <span class="num">2 / 6</span>
+  <h1>인공지능이란?</h1>
+  <ul>
+    <li>사람처럼 배우고 판단하는 컴퓨터 프로그램</li>
+    <li>데이터에서 규칙을 스스로 찾아냄</li>
+    <li>번역, 음성 인식, 그림 그리기 등에 활용</li>
+  </ul>
+</div>
+<canvas id="dog" width="128" height="128"></canvas>
+<div id="bubble"></div>
+<div id="obubble"><div class="float"><div class="in"></div><span class="tail"><i></i><i></i><i></i></span></div></div>
+<div id="ui"></div>
+<div id="toast"></div>
+
+<div id="panel">
+  <h4>시제품 조작 <button id="pmin">접기</button></h4>
+  <div class="body">
+    <div class="row"><b>상태</b>
+      <button data-mode="idle">평상시</button><button data-mode="reading">읽는 중</button>
+      <button data-mode="thinking">생각 중</button><button data-mode="speaking">말하는 중</button></div>
+    <div class="row"><b>접힘 시간</b>
+      <button data-col="2000">2초</button><button data-col="4000">4초</button><button data-col="6000">6초</button><button data-col="8000">8초</button></div>
+    <div class="row" id="bubrow"><b>말풍선</b>
+      <button data-obs="wave">파도</button><button data-obs="deep">심해</button><button data-obs="coral">산호</button><button data-obs="glass">바다 유리</button></div>
+    <div class="row" id="bubrow2"><b>보여 주기</b>
+      <button data-obm="stream">스트림·이어서</button><button data-obm="streamS">스트림·문장마다</button>
+      <button data-obm="one">한 문장·3초</button><button data-obm="stack">쌓임·3초</button><button data-obm="page">쪽수·5초</button></div>
+    <div class="row"><b>배경</b><button data-bg="light">흰 슬라이드</button><button data-bg="dark">어두운 슬라이드</button></div>
+    <div class="now" id="now"></div>
+    <div class="now">원 버튼을 눌러 위성 버튼을 펼치세요. [질문하기]로 질문을 보내면 생각 중 → 말하는 중으로 넘어갑니다.</div>
+  </div>
+</div>
+<div id="switcher" aria-label="시제품 전환">
+  <button id="prev" title="이전 (←)">◀</button><span class="label" id="swlabel"></span><button id="next" title="다음 (→)">▶</button>
+</div>
+
+<script>
+const DOG_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAGACAYAAABCwry+AAAm9ElEQVR4nO2dXYhdVZbH9y0uwa8yJLS3DYjG2DEikZg4FKYiqJCJ2iS0if0Q6NAIcV7UQVApBR80MTBNMQZ8mDyZYQJpqIcxVWKYtFqgQ08qaaFTEevBWKYVR4zWZJKJhUkIYg3rVK2bXbv2OWef7/3x/8Hl3Drn3Fv3v9baa3+ec4QAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAC4S/+Kzgy9RKBAP/zfH2r8k/CLY69FrxCNAP3w/8UG479HWMD05Hj0yoJPyQL64f/phuK/0QRAIkYPPt39m96bCKNzBh5b4nwSgH74f7Th+G+8BcCZ7/rOE9H7NCOweF+Afvi/yfhvPAGweEY2gvzSifehFUBAP/zfVPy3RcPNX7nvs3XXsbl3xyIjyGzcsc+rmh/64f9RC+K/sQRAkPhZ0bPCh19dP++YDBlk44590XtfEgH0w/9bG47/lmgAudkiizaFMyUZYvDIeTH2t6lGdOQF+uF/YUn8t5oc+c469aEzhGtJAPrh/1GL4r/VdL+3KJwNXUgA0A//j1oW/7XPApQpnptQpvOnNgD98L9N8d/T1KKXODrb3my8UFUB9MP/oxbGf60tgLQfyuJ1RkgzjAutAOiH/22L/5YLfV9V/NSh52L7QzaOBUA//D9qafynnqzLKln/CX1HnumOrPSuXBvNlZaZBOKyapb/4Zv+0P0/5pH+dp5+K61Kom0Vte39L3wYbY+/8XDm42WPBST128kGJvqzNstc0J/k/6LdMFf0jxnGfp3d0jz623marWwU1RBlOT/v8Tqb7XMrs7r647RLtkpd9OGKftn/ccdUfNO/0TD28/pfl+DSjuehnSf4eT8bgvcnjXKaGCBNVNrxyVNfibr67HzRBuuP054lK7uiX/H/PO1FamGX9I8axr7t/o9tAZj8cDkQTD+TRNxIJw96pB0vE1ULGXflquXz9snBX0bz02b9KryGnZJ6WU1vG/T3Gw5Ylh37TelvmxiAgn/d5q3Re95/9cql2YIgk1TT8+fkc5KmOM5//WnqFAgf37qmT1QB6R8YOiNGD26VLuDRa3ddv4n/Zf3yex/0xyV/0m8S+67pb5sYgIJfDM3WdjoBKrpz6D3t33/jnWLnD58v+PHExZGPou11jz/U3bfk1nuMhLzy0h5x4fJP3SAuc4Ay0j9HCPrh/4XJn+OfC3wV/tdRtf/baX0JavZmGcgg+BwSrDufjKA7Jgd+Vt4ZORRtF1/TLmV2Qu1PsfND0B+6/ycl/bMtv3r0FyGv/pbp5ap5f7D6Oc6CBGXCw+/uN85ypmxY01c4CGQbZCn8PugP3f/9iu+52+Ojfu1SYPpwHSvqyBCbt+yM+jlxJB0r4/w4WH/ZV2+5oD90/49J+qu8zsQG/anXApQ1tcJQNpT7QGwEylr049VXmqjXd+/ubuk8+q4yg/fE4WERsv7Q/V82tuk3Wsk2uH1Z1BfK2wQ6+snHC/aTYIKbQ4RsGB2672Hxzz65tRLnQ3+4/u+f007jIEW6ADbrb2UxBKHOhevQTQ0RcYaQjZAE95l0VJn5oT9c//dLCZCTgU/6W3mCgIgzRFzGY7FJ2fCpK0uj7fpf/GLecTkzqjdE/GLqsjj010uVN/ugP1z/988NCvqo3/iuwPQPBoZENwiK9g3Vfs22+64Vdz94KXp/Qfy3eH7v7Pu4u6CScKKOwk9Af3n+l31PNRf5nrDV/2Nz3+9j/LfKyIYq1FxSmyrkaHkf/S2z9/nZIGD+6z+TfwcJJ+oe8IH+4v5XfU/A/9c2Ev+ZPnzXLTdv4vdLF/38XpF/fO5KzyPy31m/T/088dk3370vKgT6y/G/znfw/8+NxH8rT/DbTFVJAPrhf+Fh/LdcLRhV1/amQD/8LwKOfwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA4iPwY5hCBfvhfhBz8F8dem8lSCOhcXwoN9MP/F0ONfw7+7w/8xtgIdM7IM6uil+tGgH74/6Il8d8jGmJ6cry7HT34dHDNYeiH/22I/8YSAHF954l5hSEOMo7uAYmuA/3wf9PxX+uDNVkMZTwSzQXgx6m3Re/KtWLjjn3az+jEDx45X/uDQcsA+uH/UYvi3/jx4GWiZjx6proQx6KmkA4yjE8tAOiH/22J/0YSgCyaGH51fWJTiI7Pnq/Phi4C/fC/sCD+G+kCyKKzwoYgXO0C0Bb64X8b4r/VVP+3KNxncikJQD/8P2pZ/Pe4GPw2TJ9kBfrh/1EL47/HxeB3LQlAP/w/amn819YCSBPf2fZmJd9rC9AP/9sY/y0baj9Z/NSh54yP2TIeEJeB6feEoD+JEPT3O+z/dtUGMMlSccJMz2myFcAO1rFxx76ZEPTr9svB6Lv+UYf9367DACZ0fj8SbVfctFgcf+PhecLpGL3UY02Tlt3pWNzqLp/0x/k+S43ksv5ph/3ftsUAJC7PsaYwadplycy+6Z/zvfHgl2/6XfF/jy0GcBFV3+Spr0QImPo+SwXgItMe+L9dtgFWrlpe6AdteWBd4jF1tNSk/1RHASDtA0NnxOjBrYUSnwv6TX2fxw4u6O/3yP+tIkaQl7NeNcDCmoGWLyYtfY2bAjn/9adiya33GP2eDWv6om0dI8GkfXD7snkBz0s0uU8s28BH/aa+91X/oCf+L20dAAWAPC1hStL8p6n4V17aIy5c/il61bEoiIxMeinwudlHjtc530f9ZfneVf1jHvm/UBdA7vPEjQbrLmLgbMjiL458FG2ve/yhXL/jnZFD0Xbi1IluJqwnCMTchT3LU53um/4svvdR/5gn/m+XYQBieFV61tt/453aJlFe4QwJbwJe6JF0DmulrS/6s/jeR/0++b9QF4D7G1QDyBlORtf/IUPQfurjlEnZ32dKFu2+6Cffp/U3fdbvi/9LGQMw6fOQIXb+8Pk8I2zesjP60XE/PE3Q67t3d7d0Ln1fnctBeTRYvmEDQe9V5/uoPws+6u/3wP+tsqZD2ACqMdQMKDeFCDbK4Xf3x/4fEnb0k4+1x0j8s09ubST41dFw2QZx+KZfnutP872P+ocd93/hBKAr4Gl3u2FD6Qyhg86j4zojkXCiiZpPp98EX/Wb+J7P81G/KTbpLz0BFDVEHMfOnhVvLTq3YH+TTd44/Wm1oO/6TfFV/1aH/F/JTUFNDcDH6Pynrizt7tcJFYvsvAegugJOrQWTakUf9OuA/9c74/92kwWAoeNfTp+8+nfv+nmf45VmNkK/i+aBTbXqFn4c3SbEXw486KR++P+M0/5v21AAiC8PPChWr70jej8xfrI7oFSkiVkHdJvmvEs9VXT6ackp2djW2r8q/7vCgOP+b9tkgInx09H29t57u/s4+9laAMq8Ekyn/+7f7RFiaHagx0bK8D+tXtv7/LWK/mPR547+02/g/6Hq/F94HcAXU5ejbdHa+vm9lyLHy8HfLQCWQ4WgaBNNp5/saevcvvq8urgESBpMlqeydvj/3lr9X3gl4KG/Xop9Wgklhbj5SxPYAC7gyxOLiibAuFVxcVByiKs4bF/c5IP/S5kF4FZAEShR6IJBXVxiO2pzlwZ4SFdSIqzrApY6CgA9tDKuFZC1MnCl8BeF/a/tKu3qsz8BUCsgLoubON6kAFCT0+Vg0C3r5NYNFR5dwbGVpMdVb7vvWicGb+vkfMySXhP/z1WMlcV+KQlAV8CpUHOQ0HtexaRr0su1R9w0ydz3OJkESHuSbqaJGqBsqDLQxQO3hOTVbHFLXOXYGTwirPb5F1OXxa8616S2APN2G6q+wKmypwNzkz7qHz62ZF628xXSJrd42Hm6pizVotx1kgOo7hqgahvoYkL+22XGIp90ZrbdZ+TDeTGgu4yY7aZWmFX6vpbHg8tjBGrGVM+Juw1SU5d6pqHq4QIg1/o6B3Lw0HsKoDhs1Z13PEi2S9otr8oYW6ozCRTxodxapm5UXdc4lJIAWCA5k0duCRJCTqRm4VUh8zMmO5nP2bxl5wwFCQdGUi1qYw1AetiBab9Xtglp5gIhB4yNugm59SIXVPKjLiZ0elRfc+tAHzf2MiYlczmppcWuzoakvU7dpfwTbs5wdmcRzLkrPY/I5y9d9PN7dA7B58nn0HF1zMDmQCD9qh759951y82b0r6DNOvGC2zVzT5Xfc2/V42JpFiQ4ybOhq7Qv2I2mROsW9Ws+jzOhnVQ6B+pgU2CSCxvkz7L4tOMk/Q9n33z3fuiQWT9Jr/XBBPb2aQ/7fdmiQXGJf1CQ9ZYyOLzsvXnTgAmtVodNBUE0A//Cw/iv+VSoWg646cB/fC/CDj+AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGAxukcihQT0w/8i5OC/OPbaTJZCQOf6UmigH/6/GGr8c/B/f+A3xkagc0aeWRW9XDcC9MP/Fy2M/x5RI9OT493t6MGng2sOQz/8b1v815oAiOs7TxgZgfb7+Chx6If/bYr/Wh5CSGJILInmAvDj1NvRduuuY9rP6MQPHjnv7AMjoR/+n7Yw/kt5PHiW5i/Dwqlg6Ni4Y5/WCK4C/fC/jfFfWwJgNj3zYrQdfnW9tmAwdJyN5FMigH7436b4r60LwO9ZeBZkQ7jYDYB++F9YGv+tOvu/RWFDuJQAoB/+H7U4/luuBD/Tu3Jt1D9yIQlAP/w/ann897gU/LbNoSYB/fD/qAPxX+k6gDTxnW1vVvK9tgD98L/t8d9qqvaTxU8des74mAtdAeiH/0cdif/KpgHTslScsLK+v2mgH/53If5rXwos0/n9SPS6/4UPFxrnhtuil3rMJ6A/bP/HQfr5VTXtJge/Vty0ONcxm4F++H+0gsG/qqikC3Di8LBYuWq5CBXoh/9XGsS/3Lo5/sbDxsecXgqsY8sD6xKPqaOldTSN6gT6w/T/8YSCTcfiZgnK1F/ZLEDaksc4cee//lQsufUeo/+zYU1ftLVtJgD64f9hR+K/skHAyVNf5Zr/NBX/ykt7xIXLP0UvGxcFQT/870L8V9oFkK915owoi7848lG0ve7xhzJ/9zsjh6LtxKkT3UxoG9AP/yfFfxHKiv/Kms6UlfbfeGf3750/fB4ZoSwDyJABbOwGQD/8b3v891Q5FUaiGSoMVCNSH6dMyv6+MoB++H/UkfjvqXIenDKeaoTNW3Ym/ug0Qa/v3t3d0rn0fTbV/tAP/486FP+lFRweiNAtgqDMpzaHicPv7o/9PhJ29JOPtcdI/LNPbrWm8MuDMCHqJ+B/N/3fKjPw6eKEuOkPHhDTGUIHnUfH44zUdPCr2omQ9BPwv/v+bxVt6jKU9Uhk0vwnDYDwiKVsiDiOnT0r3lp0Tnus6cKvaidC0U/A/0974f92Wevd08Qz3KwhQzx1ZWl3vyyU99O+pgPddK1/KPoJ+P9pb/yfex2A7mKHuHucEzrj3P3ypavHe2fvgirfDdW24E+70Md3/TLwvx/+bxctBPxj07JfdN6uvgUDG6vX3hFtJ8ZPRttonnSXffP6aff3D0U//D/ulf9ztQBM+zwyfB41fWQjTIyfjra3995LvR4r5/XjCFU//O+P/1t5aoDB7cvEwNCZXPc4T8uadMzm2o+006WeWZzvi34C/l/mlf8zLwSiH1ek8BNFPtskrD3pQh+f9RPw/xmv/N+TtwYImaIJ0GXgf+GV/xu9J6Bu1JQMa+PlvTJlJUBX9ZeFq/oHPfJ/q2hfOK9wGghRB0RsvrpPBvrh/0FP4r/Q/QCoL2RiBF2mS7qGec44MzYnAQL64f+Vjsd/O/9AkIiyIA+IxBmCs52OOCPYPhUG/fD/gCfxX/hioLT+EA2YEKoRWDxd7EC3QZJF23ChiwnQD/8POh7/hf8JD1iYGIKvbCKBvJaAoP20j3Gh8DPQD/8Lh+M/9z+665abN8l/L13083tZv+PclZ5H+LP8Po7PvvnufWER0A//Cw/iv1VG8NeFLUkA+uF/4Un8t2wuELYU+DSgH/4XAcc/AAAAAAAAAAAA7KfQTUFdnLcvC+iH/4Xv8U9Bzi91v4ztV2/lBfrh//5Q4z9OpLpfd1xnNNeAfvg/2PhPEhkHi9YZxTWgH/4POf5jC0AeXDQC9MP/ocT/vMuB+ccePf29CBHoh/9FYPHfloM/JOEq0A//Hw0w/hu9JyAAwIEEsOMfXoheoaLTH5JNTPX7apMdHuuflwDO/M+F0v/Bvx//3Pq7vDLQD/+HHP/RD/126v+iVyijoDLQD/9/G1j8z5sFoCWNv73/zsSRUKoll920OPYYQcerqE2rBvrh/98GHP8LakIV2hd3jLMdH3d5NRT0w//fBhz/C5rD/EpaDqkeF44D/fD/twHEf+JVTKoQvuqJ9tPghsxv77/Tu6uioB/+F57HfymXAxNJ4n28dBb64X8RcPwb480FEg3o98FW0N+xOv4bWQmYtRDYZrQ6IM0Djy3xIgnkwWf9/RbFfyMJYPTg00ZG4CDwNRDSdIeK7/pHLYr/Qk8HNoH6PBvu+OWM/PzzjTv2Re9JlO99IlU/wc400U7OHzwinLUT9E9ZHf+1tABYJImPnpZ6+vvuQou4zOZLLUA6KOOTdnoRrF+n3RfdTOj6bY//ylsAchBMT47HHlf3qeJdrglZ9/WdJ4QQ858Vb9K0c1k7Ebr+fovjv5YEQLD49//ln8WGO37Z3U+G0UHNJN9qAlV/knYC+v3x/7Sl8V9bAmA2PfNitOXmYFxW5OaSbwVB1p+knWD9PgH9L1oV/7U0qeQmDgvPgmyIwSPnnVpMQdplZ+bRT/SuXBvVCi5pJ0LXb3v8t5ru/+QxhEtBwM7PG/iuFwLo71gd/y1XCr+LhQD64f9Ry+O/x6XgJ+j7TBdSNAn0w/+jDsR/pesA0sR3tr1ZyffaQt7fSXZJsg30++H/jgXx32qq9pPFTx16zviYC12BIvq7+2+4LdqsuGmxOP7Gwws+D/1++r/u+K+sBZCWpSJhFOQ33Cbuf+HDhSckHXOgFjT6fRqNZBd6UcGnV6HvbxDoH3ci/ht9LkBckJsUANcJQWMSoeu3Jf57qmr+gHLY8sC6oE3pmv5+x+K/kpWAJw4Pi5WrlpfiZBcDYHD7skyf0Wnkfn/cQFFc37BpQtfvWvzXvhRYRje4JR9z0fll6U8bIabjR7cJsWFNn7MXyUD/w43Hf2WzAGkr3+LEnf/6U7Hk1nuM/s+GNX3R1rYCYKK/yDQQ8cpLe8Q7I4ei94uvaVtlA+jvOBP/lQ0CTp76Klfgm4qnAnDh8k/Ry8ZFQWn6kwLABC78E6dOCBuB/q+ciP9KuwDy1WycEWXxF0c+irbXPf5Q5u+WCwBnQtfQ6TcNAFsLfhZ817/VgfivJAFQk2RgSMzsv/HOecZQm0V5hLsQAKx/cLsQA0NnuvtN9GdpAvL5tgH9U87Ef0+VUyE7f7j68AQyBhmh7IC1sQCwfi78ciCkYVr4V69aF702b9lpVf+fgP6OM/Ff2ToAWqlEGU81AgVs0o82EcTBT+faVgBU/WoAcBCk2cDEDrYN/hHQ33Eq/ksJHnkQQrcGmoJergXZKIff3R/7nSTs6Ccfa4+R+D9/cMCawl+VfkZ3ni3aCejvOBv/rTIczyuf6OKEuOkPHhDRGUIHnUfH44xkQwHIql/tCqTp53NoYY08lkA0rZ2A/o7z8V/o2YAsnDOebqBDhkZAecTSpF987OxZ8daic9pjTReAPPp1QZCmnyAbNK1XBfo7XsR/u6zLHdPEM9ysIUM8dWVpd78slPfbGPhF9MvaZVQ7yPoJ22wA/R1v4r9d5rXOSXex1Rnn7pcvXT3eO3vjSPkGkrYFfln6KQgoAHjfl9MnF9iBgH4//W9T/OdqAaiZj0jLftF5u/oWDGysXntHtJ0YP3l1ocSuPiuDvwr9sh0mxk9Df2D+X91w/BdaCGTa7CH4PKr5ZCNQ0BO3994bPTXGxnn9KvWrdoD+sPw/0XD8t+sQL0Of4T7wrOj5x2wY3a9LPyPbAfrD8f/tFsR/T9kXephQxj3ymwT64X9f4j9XAqA5aZtE1A30w//DnsR/rgSQ9Y4vcehGTcmwNl7eKwP98L8v8d8qctunLLc9komekT43FaYbEKP9NvcDoR/+H/Qk/ttF+8ImRtBluqRrmOeMY/2trqAf/l/pePy3i13vvaw7IBZnCM52OuKMYPtUGPTD/wOexH/hi4HS+sN8EYtqBBZPFzvQNfCyaFemwqAf/h90PP4L/xMesDAxBF/ZRALlK9xov3z5qwuFn4F++F84HP+5/9Fdt9y8Sf576aKf38v6Heeu9DzCn+X3cXz2zXfvC4uAfvhfeBD/rTKCvy5sSQLQD/8LT+K/ZXOBsKXApwH98L8IOP4BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAC4ge3PfQQVE3oAhKyftF8ce20miw3o3JBt5hWhB0DI+ln79wd+Y2wDOmfkmVXRywcbePN48DyQA0cPPi2mJ8cFbU0DYOCxJYJergdA6PoJ0s5bUxsATxIAEXoAhK6fuL7zhJENOPkBjxIAEXoAhKifWz86G/Bx9aVq96UVZBu5Hg9epPnLAfDj1NvzAkD9jC4ABo+IWp6ZXjah6ydYq/zYbEJODDIbd+xbYAPgaAIgQg+A0PUzm555MdoOv7peaxeGjrONfLRDcAmACT0AQtXPWli3CXyubAeXW0E2Uosh5SZulgBg5gfA+Vqfn14GIetXuz9FYDu4pN92Kjdk6AEQsv4ytTO9K9dG3SNXbGA7lRox9AAIWX8V2l2zQdDTgFUFgCtz6KHrJ9K0d7a9Wcn3AkvWAYQeAKHqV+f9k7TrbED7+BWHK0kwyAQQegCErt8kSU0deq77quL7QcPTgCYBUOX3N03o+k3o/H4k2q64abE4/sbD82zDx+5/4cN5x4DjS4FlyMn0IicvKBw33Ba91GM+4aN+k9YPQwWfXlmPAYsTQOgBELp+4sTh4aZ/AmiyC0ABsHLVchEqoevPypYH1iUeU8dCinafQINLgXWEHgA+6ae5+YEhMTP8anICJE1/27Zw//mvPxVLbr1He0z+bMSuvqjFhfUA+alkIQU5JW3Ja9wINweACRvW9EVb2wIA+jszg9uXxbaC8k5/yrzy0h7xzsih6P3ia9rWxYAIfRBw8tRXsceSAsC08FMAXLj8U/SycTosdP28dJlfOu0XRz6KXnngwj9x6kQJvzRcKu0CyI7nFoEaAMR1jz9UKAC4JWAboernbsD+G++cZwu1VZhHN4OCXw6VNZuoVpIDYOcPn0cBUEbzT4UKgG1NQOifbZWoMXD43f3GrRwTqMu4ectO6/zvCpWuBCSHMxQIVAuQw8qk7O8rA+if9T8lfDUGqLAm+SzNn6tXreu+UPgtXgdAK9WqCIDXd+/ubm0MgKr1EzYXAPUiqDgbUKuNfr/6Imhr0q2xTbuLlGI8eRBKdwUc1fxqU5Cg5mCSc49+8rH2GBX+Z5/cak0A1K2fCv+fPzjgjH55PERnBx10HncZVNp/nIy2jw79wQr9LtMqw/G88o2u0Y6b/iszAAgbgh/6zf1P0PgP1+xyHMRx7OxZ8daic7HHm/Z/0LMA8pJXkwtTeABQDoC0IHjqytKooNvofOjP5n+GWzUUB+RfRi7ovJ/2Ne1n32mXdbML3TSPrwEA/fn9L8fBXw48eHXH3tl9lz79t6glQdjoexF6Aki60408762iC467X7509Xjv7F1w5bvh2hgA0F+O/6kC2Pv8tWL12juiv/c+fzrax+fZ6HsfydUCUDM/kZb9o/N29S0Y2OIAmBg/GW2jdQK77JvXl4H+8vw/MX462t7eey/1+rv+Bw6sBMzS7OPzKMvLQaAGgI3z+nFAfzH/z/p8Pi75P+gEkLXPx9BneCBQDQA6ZsPovgnQX9z/umOu+D/ohUBJF7qYkCdwbAL6w/a/CD0BDAydCdqJ0B+2/0XoCYCu9S4D3agxBZatl7cy0B+2/30iV18r7YYPJo6ngSB1QNDmq/tkoD9s//tEu2hf2CQIdJk+6WKPueCw/lZP0B+2/4NNAHzDB6oFeEAsLhA42+uICwLbp4KgP2z/+0Thi4HS+sM0YEaoQcDO5xtEyE53ZSoI+sP2vw8UNjIP2JgEAl/ZRw6m8zk4aL980Y9Lzof+sP3vOrkNfdctN2+S/1666Of3sn7HuSs9j/Bn+X0cn33z3fvCIqA/bP8HnQDU4K8LW4IA+sP2v0+0bC4Qrjgc+sP2PwAAAAAAAAAAAAAAwAP6V3RmeM2H/N51rHg8OAA207+iM/MfK/8+ev9r8cG8964vWnL6xwNQV+Ff/KeD4sKjOxYc//XkB06vXKzs8eAA+MQFTeH3ASQAEHQfOA2q3amW1+F67U84/eNBA33gyQ+E/N71ApDHBj5pd14AqBbf+8B5bOGTZswCgKD7wJm7Ax6M/Mt4I6RquM9LzpffiwCbv4xPNWGoYBAwQwGgl/peBDoQVkbhD8V+NoMEkKEPTMg1YahJoKzCTw8ZzWK/kGYf6gIJwBD0ga8mgbIKPz1k1TQJ0DkDjy0R9EISaCABYB54IUULg4uBXFafn5+wnCUJ+Ea/BZqNEgD6wOX3gdEEFuL6zhMLHrceZyuq+X2i35IuUGoAYx54oS3KKvwU+L0r14qNO/alfp9cCAaPnHd29F3Wzgngx6m3u3bQoSv8vtigt2H/G68DQB+43HlgtQm8ccc+r+aXk1Br/NknBx2L7KCDCohvLYBpS/zfNg36KuaBKau5FvRl/l6qAan2C7EJzIWe4CcNx9mBjvPjxXyyw/UW+L/V1FpobgaZNH/kz9DWtaQhE3oTmH2Y9/Hi8nMGXdU/apH/jbsAckugzD6wafNnfh9IONdykAm1CSz7PS+cOOYKjJNxMG2R/zNdC4A+cHmE1gQuo/DLNN139sX/mS8GQh+4OOTMrE1gPl/3qO3QCr/rSWCrRf5vhd4HcrUgmE4f2aI7LeA7294UU4eey/X9VChcscOoZf5vNRkMnAA2PfNitM3SB3ItAVRRC7qQBEx0U+Fn1CSQdMw3O2SlDN3t0PtAdeB7EzhtdVqabpOaP+mcsu0akv/bofeB6iLN+XmbwE0HPwd3HHHdOlPydgtsY9pS/7dC7wNVjc9NYBNtWZL9/S98GG2Pv/FwpmP8f2yMhX7L/V9bC8DXaaC45q/8m3xuApf1v6mAc+GW36cda5p+x/3fDr0PVFXzt6zfZGsTWOfTyVNfRduVq5Zn/j65UKsFnP7mmvBv2+yxT78H/m+H3geqKqlxYsqS+Io0gZtA1TUwdCbajh7c2j3GA7hJ3QC5mStz/utPxZJb70n8Dd3P7uqr9dqSfk/839P0IJHsRF0g0D5+xVH3DSVMWjRS68ToO7lpSy92tskxW+DaP83XKkl+TSv8zCsv7REXLv8UveqIg36P/F9KCyDEaSD1f1IBUJu+WX6Xi01gLvRc+ycVfnn2hlsDrOniyEfR9rrHH8r1O94ZORRtJ06dEBvW9Ik6mPbE/606poHyXvmVhbpGgeP6vlwAVKfzCG1VTWCGA7/OsRA58SfViFz49994Z7Td+cPnkT2Sav+8kB2qtEG/Z/7vKcsYca8sUPMmromTdKxuThwe1vZ92eFZxz5cawIzHGxJTV1d/58SAe2nAC+Tsr8vBP8X7gKENg1EQT8wJGYGt8/+Tc0+k6avb03grDHAg4HcCqDt5i07xeF398cGe1oNuHrVuu77P39wIPq+qltAY575v5Rr+pOmgfKs+suSKbkPVPdCEJMbW8ja5eB3uQkcFwMc4OqKTdU+sh3YFgQnAh1UsI9+8nFiAlh8TRv+F9n9X6gFEPI0kPyIsKxwE/jw35n38WxqAsvIfk4q+LrrOsgOnAyokMdB51Bgq0mCav32Hyej948O/UHUyZgn/i/UApCdLA+EqMkhKQGUUQtSH4ibQXXWBEmtAJ1mXe3nWhM462W+SaiDg0kcO3tWvLXo3IL9f9r+spj83ynxjx/8ayNLoYXj/i+UAAa3L4udBlITgEzZfSA2BPeB6m4Cy6O8aTWgL03gpASg6+8mQec/dWVp929dQSd0+pq8T2S/B/4v7eGOoUwDxRWANMen1XwcCDroPLm2kJGbwE0kAKoEksZ8TMeAvpw+2X1/e++98z7HrUvbLvbp98D/7TL6QWoWlGFHyrWCTX2gssjSFFaDRu4Lx0E1pK6fzE3gpqCCOfzqcuPCHpf0vzzwoFi99o7o/cT4SaOxI5sYdtT/pawEDGkayATTJrAcCKlN4EX6Zu6jQ39o9FbpdIOWvIO8KhPjp7stAMbW2t8X/5f2lNfQpoEINIE7M9vuu1Yc+uulyB5xLUCd73RdN12sUFzYkth99H9pC4FCmwaqugnsArMBOfu8BrpHY97CHwfZMikubGDAcf+XfjmwSbazqQ9kaxN4+NVZ+1ANY3sT+Iupy1qdR7fN1uwmSYDO0Z1L30FsWNNn5a2/Bxz3fzv0PlBZwS9fGZeH5/de0trq7t/tEWJop/WtgCI1fRPLl8viC8f9XzgBqJdB5ukD0XG5DzTcu17bB9LRZK0gN4Fnm4LrK2kC21jzpQ3YyjMyutkZuTVH9qOCxGMJ6vfaypgH/m+H3gcqkwXadmWr2XS2mWtGW9n8Zei3bd6yc0Yeo+ECzsfUz9DgISMXfrXAy98jLKfjoP/bofeBymwGmvZr45rAcefOfY8TSUD+W/f+KvPX0fM5arKwWbMP/m+H3geqow8cV6sxV596vHAk3SWyBGjcuS4UeJ/8366yD1QUX/rAqsOp+furzjVGtYjNfWDgvv8rvStw0UEQV0jrAy/8BC2gmb/Hhz5wqIw57P/Kbwtuck1/0jTQ3MIhq/u/aX1g3bk+9YGBcNb/pdwUlFeC6Wp73Qq+pD5QXIuhzqv8AAiFUloAcf0XeSRUxsUn/ALgI+2qR0G5T8O1N7UYKGGogyBJYCAMgGoobQyACyn199UR0IVzwrODIJwE5BaEPGbA3+PKTAAArlFaoeK7A/HlmwwV3LtuuXmTev7SRT+/x6vBeAT03JWeR2g/jxn4NAKus4GOz7757n3hKWk2CFl7UzYoVLDiCjYVZJPP07m0Vc+P229rwJg6tyxs0V23HULVXaUdWq6ItjUomrJD07qbskOouquyQ6lN61BrgKrt4IruKmwQsnaXbQAAEPbz/zgB/VO2h45dAAAAAElFTkSuQmCC";
+const POSES = { lie: [0, 4, 3], walk: [1, 4, 8], sit: [2, 4, 4], think: [3, 4, 3], talk: [4, 3, 8], happy: [5, 4, 8] };
+const READ_TEXT = "인공지능이란? 사람처럼 배우고 판단하는 컴퓨터 프로그램. 데이터에서 규칙을 스스로 찾아냄. 번역, 음성 인식, 그림 그리기 등에 활용.";
+const ANSWER = ["인공지능은 데이터에서 규칙을 스스로 찾는 프로그램이에요.",
+                "그래서 사람이 규칙을 하나하나 알려 주지 않아도 번역이나 음성 인식을 할 수 있어요.",
+                "발표 자료 2번 슬라이드에 예시가 정리되어 있어요."];
+const ANSWER_WORDS = ANSWER.flatMap((x, si) => x.split(" ").map(w => ({ w, si })));   // 낱말과 그 낱말이 든 문장 번호
+const SPEEDS = [1, 1.5, 2, 5];
+const EFFORTS = ["low", "mid", "high"];
+
+const VARIANTS = {
+  A: { name: "궤도", desc: "구슬 같은 원 + 동그란 위성이 부채꼴로 펼쳐짐 + 알약 입력칸 + 쌓이는 흰 말풍선",
+       orb: 64, margin: 28, canvas: 200 },
+  B: { name: "물방울", desc: "출렁이는 물방울(GPT 음성 모드 느낌) + 글자 알약이 위로 쌓임 + 카드형 질문창 + 자막형 말풍선",
+       orb: 72, margin: 28, canvas: 220 },
+  C: { name: "음파 링", desc: "막대가 둘러싼 링 + 부채 조각 메뉴 + 원이 늘어나는 캡슐형 질문창 + 도트 말풍선",
+       orb: 56, margin: 28, canvas: 220 },
+  D: { name: "혼합", desc: "C의 음파 링을 코랄 그라데이션으로 + A의 동그란 위성 버튼 + A의 알약 질문창",
+       orb: 56, margin: 28, canvas: 220, askGap: 30, theme: "coral", parts: { sat: "A", ask: "A", effort: "A" } },
+};
+// 위성 버튼, 질문창, 생각 깊이 알약을 어느 안의 모양으로 그릴지. D만 섞는다.
+function parts() { const v = VARIANTS[st.vk]; return v.parts || { sat: st.vk, ask: st.vk, effort: st.vk }; }
+const KEYS = Object.keys(VARIANTS);
+
+// ---------------------------------------------------------------- 상태
+const st = { vk: KEYS.includes(new URLSearchParams(location.search).get("variant")) ? new URLSearchParams(location.search).get("variant") : "D",
+             mode: "idle", speed: 0, effort: 0, expanded: false, askOpen: false, collapseMs: 4000,
+             utter: null, answerIdx: 0, bubbleUntil: 0, sentences: [], cPage: 0,
+             obMode: ["stream", "streamS", "one", "stack", "page"].includes(new URLSearchParams(location.search).get("obm")) ? new URLSearchParams(location.search).get("obm") : "stream",
+             obStyle: ["wave", "deep", "coral", "glass"].includes(new URLSearchParams(location.search).get("ob")) ? new URLSearchParams(location.search).get("ob") : "coral" };
+let collapseTimer = null;
+
+// ---------------------------------------------------------------- 가짜 목소리
+// 글자마다 음절 하나, 띄어쓰기와 마침표에서 쉰다. level(t)는 0~1 크기, tone(t)는 목소리 높낮이 느낌.
+function makeUtter(text, speed, onSentence) {
+  const syl = []; let t = 0; const unit = 0.15 / speed; const marks = [];
+  let si = 0; const wordT = []; let inWord = false;
+  for (const ch of text) {
+    if (ch === " ") { inWord = false; t += unit * 0.5; continue; }
+    if (!inWord) { wordT.push(t); inWord = true; }
+    if (".?!,".includes(ch)) { t += unit * (ch === "," ? 1.2 : 2.6); if (ch !== ",") { marks.push(t); si++; } continue; }
+    syl.push({ t0: t, t1: t + unit, amp: 0.55 + Math.random() * 0.45, tone: Math.random() });
+    t += unit;
+  }
+  return { start: performance.now() / 1000, dur: t + 0.3, syl, marks, wordT, onSentence, fired: 0 };
+}
+function voiceAt(u, now) {
+  if (!u) return { lv: 0, tone: 0.5, done: true };
+  const t = now - u.start;
+  while (u.fired < u.marks.length && t >= u.marks[u.fired]) { u.onSentence && u.onSentence(u.fired + 1); u.fired++; }
+  if (t > u.dur) return { lv: 0, tone: 0.5, done: true };
+  for (const s of u.syl) {
+    if (t >= s.t0 && t < s.t1) { const x = (t - s.t0) / (s.t1 - s.t0); return { lv: s.amp * Math.pow(Math.sin(Math.PI * x), 0.6), tone: s.tone, done: false }; }
+  }
+  return { lv: 0.04, tone: 0.5, done: false };
+}
+let smooth = 0, toneS = 0.5;
+
+// ---------------------------------------------------------------- 원 그리기 (안마다 다름)
+function drawA(ctx, S, t, mode, lv, tone) {
+  const c = S / 2, R = 32 * (mode === "speaking" || mode === "reading" ? 1 + 0.10 * lv : 1);
+  if (mode === "idle") {
+    for (let i = 0; i < 2; i++) {
+      const p = ((t / 2.6) + i / 2) % 1;
+      ctx.beginPath(); ctx.arc(c, c, 32 + 4 + p * 20, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(47,111,237,${(1 - p) * 0.35})`; ctx.lineWidth = 2; ctx.stroke();
+    }
+  }
+  if (mode === "speaking" || mode === "reading") {
+    const g = ctx.createRadialGradient(c, c, R, c, c, R + 26);
+    g.addColorStop(0, `rgba(47,111,237,${0.25 + lv * 0.35})`); g.addColorStop(1, "rgba(47,111,237,0)");
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(c, c, R + 26, 0, Math.PI * 2); ctx.fill();
+  }
+  const body = ctx.createRadialGradient(c - R * 0.35, c - R * 0.4, R * 0.1, c, c, R);
+  body.addColorStop(0, mode === "thinking" ? "#8FB0F8" : "#7FA5FF"); body.addColorStop(1, mode === "thinking" ? "#3E63B8" : "#2F6FED");
+  ctx.save(); ctx.beginPath(); ctx.arc(c, c, R, 0, Math.PI * 2); ctx.fillStyle = body; ctx.fill(); ctx.clip();
+  if (mode === "reading" || mode === "speaking") {
+    const lines = mode === "reading" ? 3 : 2;
+    for (let i = 0; i < lines; i++) {
+      ctx.beginPath();
+      const amp = 2 + lv * (mode === "speaking" ? 11 : 7), freq = 0.10 + tone * 0.08 + i * 0.03;
+      for (let x = c - R; x <= c + R; x += 2) {
+        const y = c + (i - (lines - 1) / 2) * 7 + Math.sin(x * freq + t * (5 + i * 2)) * amp * Math.sin(((x - (c - R)) / (2 * R)) * Math.PI);
+        x === c - R ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      }
+      ctx.strokeStyle = `rgba(255,255,255,${0.85 - i * 0.2})`; ctx.lineWidth = 2; ctx.stroke();
+    }
+  }
+  ctx.restore();
+  ctx.beginPath(); ctx.ellipse(c - R * 0.35, c - R * 0.45, R * 0.28, R * 0.16, -0.5, 0, Math.PI * 2); ctx.fillStyle = "rgba(255,255,255,.35)"; ctx.fill();
+  if (mode === "thinking") {
+    for (let i = 0; i < 3; i++) {
+      const a = t * 2.4 + i * (Math.PI * 2 / 3);
+      ctx.beginPath(); ctx.arc(c + Math.cos(a) * (R + 10), c + Math.sin(a) * (R + 10), 4, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(47,111,237,${0.5 + 0.5 * Math.sin(t * 4 + i)})`; ctx.fill();
+    }
+  }
+}
+
+function drawB(ctx, S, t, mode, lv, tone) {
+  const c = S / 2;
+  let base = 36, k = 1.4, rot = t * 0.4;
+  if (mode === "idle") { base *= 1 + 0.05 * Math.sin(t * 1.6); }
+  if (mode === "reading") { k = 2.5 + lv * 5; base *= 1 + 0.05 * lv; }
+  if (mode === "thinking") { base *= 0.9; k = 1.2; rot = t * 2.6; }
+  if (mode === "speaking") { k = 2.5 + lv * 10; base *= 1 + 0.14 * lv; }
+  ctx.beginPath();
+  for (let i = 0; i <= 96; i++) {
+    const th = (i / 96) * Math.PI * 2;
+    const r = base + k * (0.6 * Math.sin(3 * th + t * 1.3 + tone * 2) + 0.4 * Math.sin(5 * th - t * 1.9) + 0.5 * Math.sin(2 * th + t * 0.7));
+    const x = c + Math.cos(th) * r, y = c + Math.sin(th) * r;
+    i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+  }
+  ctx.closePath();
+  const g = ctx.createLinearGradient(c + Math.cos(rot) * -base, c + Math.sin(rot) * -base, c + Math.cos(rot) * base, c + Math.sin(rot) * base);
+  g.addColorStop(0, "#22D3EE"); g.addColorStop(0.5, "#3B82F6"); g.addColorStop(1, "#6366F1");
+  ctx.shadowColor = `rgba(59,130,246,${0.35 + lv * 0.4})`; ctx.shadowBlur = 18 + lv * 22;
+  ctx.fillStyle = g; ctx.fill(); ctx.shadowBlur = 0;
+  if (mode === "reading" || mode === "thinking") {
+    ctx.save(); ctx.clip();
+    for (let i = 0; i < 4; i++) {
+      const y = c - base + ((t * (mode === "thinking" ? 60 : 30) + i * 22) % (base * 2 + 20)) - 10;
+      ctx.fillStyle = "rgba(255,255,255,.18)"; ctx.fillRect(c - base - 10, y, base * 2 + 20, 6);
+    }
+    ctx.restore();
+  }
+  ctx.beginPath(); ctx.ellipse(c - base * 0.3, c - base * 0.4, base * 0.3, base * 0.15, -0.4, 0, Math.PI * 2); ctx.fillStyle = "rgba(255,255,255,.3)"; ctx.fill();
+}
+
+const barNoise = Array.from({ length: 36 }, () => Math.random());
+function drawC(ctx, S, t, mode, lv, tone) {
+  const c = S / 2, R = 28;
+  ctx.beginPath(); ctx.arc(c, c, R, 0, Math.PI * 2); ctx.fillStyle = "#0F1B3D"; ctx.fill();
+  ctx.lineWidth = 3; ctx.strokeStyle = "#3B82F6"; ctx.stroke();
+  const n = 36;
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2 - Math.PI / 2;
+    let L = 2;
+    if (mode === "idle") L = 2 + 7 * Math.pow(Math.max(0, Math.cos(a - t * 1.2)), 6);
+    if (mode === "reading" || mode === "speaking") {
+      const spec = 0.5 + 0.5 * Math.sin(a * (2 + Math.round(tone * 3)) + t * 3 + barNoise[i] * 6);
+      L = 2 + lv * (mode === "speaking" ? 18 : 11) * (0.35 + 0.65 * spec);
+    }
+    ctx.beginPath();
+    ctx.moveTo(c + Math.cos(a) * (R + 5), c + Math.sin(a) * (R + 5));
+    ctx.lineTo(c + Math.cos(a) * (R + 5 + L), c + Math.sin(a) * (R + 5 + L));
+    ctx.strokeStyle = mode === "speaking" ? "#A5F3FC" : "#60A5FA"; ctx.lineWidth = 3; ctx.lineCap = "round"; ctx.stroke();
+  }
+  if (mode === "thinking") {
+    ctx.beginPath(); ctx.arc(c, c, R, t * 4, t * 4 + Math.PI * 0.6); ctx.strokeStyle = "#A5F3FC"; ctx.lineWidth = 4; ctx.stroke();
+  }
+  ctx.beginPath(); ctx.arc(c, c, 4 + lv * 5, 0, Math.PI * 2); ctx.fillStyle = "#E0ECFF"; ctx.fill();
+}
+
+// D: C의 음파 링을 코랄 그라데이션으로 칠한다. 그라데이션은 천천히 돌고, 막대 색도 같은 방향을 따른다.
+const CORAL = [[255, 158, 109], [255, 111, 97], [232, 70, 110]];
+function coralAt(k) {
+  const [a, b, u] = k < 0.5 ? [CORAL[0], CORAL[1], k * 2] : [CORAL[1], CORAL[2], k * 2 - 1];
+  return `rgb(${a.map((x, i) => Math.round(x + (b[i] - x) * u)).join(",")})`;
+}
+function drawD(ctx, S, t, mode, lv, tone) {
+  const c = S / 2, R = 28, rot = t * 0.5;
+  const g = ctx.createLinearGradient(c - Math.cos(rot) * R, c - Math.sin(rot) * R, c + Math.cos(rot) * R, c + Math.sin(rot) * R);
+  g.addColorStop(0, coralAt(0)); g.addColorStop(0.5, coralAt(0.5)); g.addColorStop(1, coralAt(1));
+  ctx.shadowColor = `rgba(255,111,97,${0.35 + lv * 0.4})`; ctx.shadowBlur = 10 + lv * 18;
+  ctx.beginPath(); ctx.arc(c, c, R, 0, Math.PI * 2); ctx.fillStyle = g; ctx.fill(); ctx.shadowBlur = 0;
+  ctx.lineWidth = 2; ctx.strokeStyle = "rgba(255,255,255,.8)"; ctx.stroke();
+  const n = 36;
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2 - Math.PI / 2;
+    let L = 2;
+    if (mode === "idle") L = 2 + 7 * Math.pow(Math.max(0, Math.cos(a - t * 1.2)), 6);
+    if (mode === "reading" || mode === "speaking") {
+      const spec = 0.5 + 0.5 * Math.sin(a * (2 + Math.round(tone * 3)) + t * 3 + barNoise[i] * 6);
+      L = 2 + lv * (mode === "speaking" ? 18 : 11) * (0.35 + 0.65 * spec);
+    }
+    ctx.beginPath();
+    ctx.moveTo(c + Math.cos(a) * (R + 5), c + Math.sin(a) * (R + 5));
+    ctx.lineTo(c + Math.cos(a) * (R + 5 + L), c + Math.sin(a) * (R + 5 + L));
+    ctx.strokeStyle = coralAt((Math.cos(a - rot) + 1) / 2); ctx.lineWidth = 3; ctx.lineCap = "round"; ctx.stroke();
+  }
+  if (mode === "thinking") {
+    ctx.beginPath(); ctx.arc(c, c, R - 6, t * 4, t * 4 + Math.PI * 0.6); ctx.strokeStyle = "rgba(255,255,255,.95)"; ctx.lineWidth = 4; ctx.lineCap = "round"; ctx.stroke();
+  }
+  ctx.beginPath(); ctx.arc(c, c, 4 + lv * 5, 0, Math.PI * 2); ctx.fillStyle = "#fff"; ctx.fill();
+}
+const DRAW = { A: drawA, B: drawB, C: drawC, D: drawD };
+
+// ---------------------------------------------------------------- 화면 조립
+const ui = document.getElementById("ui");
+let orbEl, orbCanvas, octx, sats = [], askEl, askInput, effortEl, pieEl;
+
+function geom() {
+  const v = VARIANTS[st.vk];
+  const cx = innerWidth - v.margin - v.orb / 2, cy = innerHeight - v.margin - v.orb / 2;
+  return { v, cx, cy };
+}
+const SAT_ITEMS = () => [
+  { key: "ask", A: "?", B: ["?", "질문하기"], C: "질문", tip: "질문하기" },
+  { key: "read", A: st.mode === "reading" ? "■" : "▶", B: [st.mode === "reading" ? "■" : "▶", st.mode === "reading" ? "정지" : "읽기"], C: st.mode === "reading" ? "정지" : "읽기", tip: st.mode === "reading" ? "정지" : "읽기" },
+  { key: "speed", A: "x" + SPEEDS[st.speed], B: ["x", "배속 x" + SPEEDS[st.speed]], C: "x" + SPEEDS[st.speed], tip: "배속 (누를 때마다 바뀜)" },
+  { key: "settings", A: "⚙", B: ["⚙", "설정"], C: "설정", tip: "설정" },
+  { key: "quit", A: "✕", B: ["✕", "끝내기"], C: "끝내기", tip: "끝내기" },
+];
+
+function build() {
+  ui.innerHTML = ""; sats = []; pieEl = null;
+  const { v, cx, cy } = geom();
+  const P = parts(), theme = v.theme ? " " + v.theme : "", gap = v.askGap || 14;
+  document.getElementById("swlabel").textContent = `${st.vk} — ${v.name}`;
+  document.getElementById("bubrow").style.display = document.getElementById("bubrow2").style.display = st.vk === "D" ? "" : "none";
+  orbEl = document.createElement("div"); orbEl.className = "orb";
+  orbEl.style.width = orbEl.style.height = v.orb + "px";
+  orbEl.style.left = (cx - v.orb / 2) + "px"; orbEl.style.top = (cy - v.orb / 2) + "px";
+  orbEl.style.borderRadius = "50%";
+  orbCanvas = document.createElement("canvas");
+  const dpr = devicePixelRatio || 1;
+  orbCanvas.width = orbCanvas.height = v.canvas * dpr;
+  orbCanvas.style.width = orbCanvas.style.height = v.canvas + "px";
+  orbCanvas.style.left = orbCanvas.style.top = (v.orb / 2 - v.canvas / 2) + "px";
+  octx = orbCanvas.getContext("2d"); octx.scale(dpr, dpr);
+  orbEl.appendChild(orbCanvas);
+  orbEl.onclick = () => (st.expanded ? collapse() : expand());
+
+  // 질문창
+  askEl = document.createElement("div"); askEl.className = `ask ${P.ask}${theme} hidden`;
+  if (P.ask === "A") {
+    askEl.innerHTML = `<input placeholder="청중의 질문을 입력하세요"><button class="send" title="보내기">↑</button>`;
+    place(askEl, { right: innerWidth - (cx - v.orb / 2 - gap), centerY: cy });
+  } else if (P.ask === "B") {
+    askEl.innerHTML = `<header>질문하기 <button title="닫기 (Esc)">✕</button></header><textarea rows="3" placeholder="청중의 질문을 입력하세요"></textarea>
+                       <footer><span>Enter 보내기 · Shift+Enter 줄바꿈</span><button class="send">보내기</button></footer>`;
+    place(askEl, { right: innerWidth - (cx - v.orb / 2 - 16), bottom: innerHeight - (cy + v.orb / 2) });
+    askEl.querySelector("header button").onclick = closeAsk;
+  } else {
+    askEl.innerHTML = `<input placeholder="청중의 질문을 입력하세요"><button class="send" title="보내기">➤</button>`;
+    askEl.style.width = "440px";
+    place(askEl, { right: innerWidth - (cx + v.orb / 2), centerY: cy, h: 56 });
+  }
+  askInput = askEl.querySelector("input, textarea");
+  askInput.addEventListener("keydown", e => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); }
+    if (e.key === "Escape") closeAsk();
+  });
+  askEl.querySelector(".send").onclick = submit;
+  ui.appendChild(askEl);
+  ui.appendChild(orbEl);   // C는 캡슐 위에 원이 얹히도록 질문창 다음에 붙인다
+
+  // 생각 깊이 알약
+  effortEl = document.createElement("button"); effortEl.className = `effort ${P.effort}${theme} hidden`;
+  effortEl.onclick = () => { st.effort = (st.effort + 1) % EFFORTS.length; effortEl.classList.remove("spin"); void effortEl.offsetWidth; effortEl.classList.add("spin"); paintEffort(); };
+  if (P.effort === "A") place(effortEl, { right: innerWidth - (cx - v.orb / 2 - gap) + 4, bottom: innerHeight - cy + 34 });
+  if (P.effort === "B") place(effortEl, { right: innerWidth - (cx + v.orb / 2), bottom: innerHeight - (cy - v.orb / 2) + 12 });
+  if (P.effort === "C") place(effortEl, { right: innerWidth - (cx + v.orb / 2) + 440 - 110, bottom: innerHeight - cy + 40 });
+  ui.appendChild(effortEl); paintEffort();
+
+  // 위성 버튼
+  if (P.sat === "A") {
+    SAT_ITEMS().forEach((it, i) => {
+      const b = document.createElement("button"); b.className = `sat A${theme} hidden`;
+      b.innerHTML = `${it.A}<span class="tip">${it.tip}</span>`;
+      const a = Math.PI + (i / 4) * (Math.PI / 2), r = 132;
+      b.dataset.x = cx + Math.cos(a) * r - 23; b.dataset.y = cy + Math.sin(a) * r - 23;
+      b.style.left = (cx - 23) + "px"; b.style.top = (cy - 23) + "px";
+      b.onclick = e => { e.stopPropagation(); press(it.key); };
+      ui.appendChild(b); sats.push(b);
+    });
+  } else if (P.sat === "B") {
+    SAT_ITEMS().forEach((it, i) => {
+      const b = document.createElement("button"); b.className = "sat B hidden";
+      b.innerHTML = `<span class="ic">${it.B[0]}</span>${it.B[1]}`;
+      b.style.right = (innerWidth - (cx + v.orb / 2)) + "px";
+      b.dataset.y = innerHeight - (cy - v.orb / 2) + 12 + i * 48;
+      b.style.bottom = (innerHeight - cy) + "px";
+      b.onclick = e => { e.stopPropagation(); press(it.key); };
+      ui.appendChild(b); sats.push(b);
+    });
+  } else {
+    pieEl = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    pieEl.id = "pie"; pieEl.classList.add("hidden");
+    const size = 330; pieEl.setAttribute("width", size); pieEl.setAttribute("height", size);
+    pieEl.style.left = (cx - size) + "px"; pieEl.style.top = (cy - size) + "px";
+    pieEl.style.transformOrigin = "100% 100%";
+    const items = SAT_ITEMS(), r0 = 50, r1 = 152, ox = size, oy = size;
+    items.forEach((it, i) => {
+      const a0 = Math.PI + (i / items.length) * (Math.PI / 2) + 0.02, a1 = Math.PI + ((i + 1) / items.length) * (Math.PI / 2) - 0.02;
+      const p = (r, a) => `${ox + Math.cos(a) * r},${oy + Math.sin(a) * r}`;
+      const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      path.setAttribute("d", `M${p(r0, a0)} L${p(r1, a0)} A${r1},${r1} 0 0 1 ${p(r1, a1)} L${p(r0, a1)} A${r0},${r0} 0 0 0 ${p(r0, a0)} Z`);
+      path.onclick = e => { e.stopPropagation(); press(it.key); };
+      const am = (a0 + a1) / 2, tx = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      const lx = ox + Math.cos(am) * (r0 + r1) / 2, ly = oy + Math.sin(am) * (r0 + r1) / 2;
+      tx.setAttribute("x", lx); tx.setAttribute("y", ly + 4);
+      tx.setAttribute("text-anchor", "middle"); tx.textContent = it.C;
+      tx.setAttribute("transform", `rotate(${am * 180 / Math.PI - 180} ${lx} ${ly})`);
+      pieEl.appendChild(path); pieEl.appendChild(tx);
+    });
+    document.body.appendChild(pieEl);
+    ui.appendChild(pieEl);
+  }
+  if (st.expanded) expand(true);
+  if (st.askOpen) openAsk(true);
+}
+function place(el, o) {
+  if (o.right !== undefined) el.style.right = o.right + "px";
+  if (o.bottom !== undefined) el.style.bottom = o.bottom + "px";
+  if (o.centerY !== undefined) { const h = o.h || 48; el.style.top = (o.centerY - h / 2) + "px"; }
+}
+function paintEffort() {
+  const lv = st.effort;
+  effortEl.innerHTML = `<span>생각</span><span class="val">${EFFORTS[lv]}</span><span class="lv">${[0, 1, 2].map(i => `<i class="${i <= lv ? "on" : ""}"></i>`).join("")}</span>`;
+}
+
+function expand(noTimer) {
+  st.expanded = true;
+  const P = parts();
+  if (P.sat === "A") sats.forEach((b, i) => { b.classList.remove("hidden"); b.style.transitionDelay = (i * 30) + "ms"; b.style.left = b.dataset.x + "px"; b.style.top = b.dataset.y + "px"; });
+  if (P.sat === "B") sats.forEach((b, i) => { b.classList.remove("hidden"); b.style.transitionDelay = (i * 40) + "ms"; b.style.bottom = b.dataset.y + "px"; });
+  if (P.sat === "C") pieEl.classList.remove("hidden");
+  restartTimer();
+}
+function collapse() {
+  st.expanded = false; clearTimeout(collapseTimer);
+  const { cx, cy } = geom(), P = parts();
+  if (P.sat === "A") sats.forEach(b => { b.classList.add("hidden"); b.style.transitionDelay = "0ms"; b.style.left = (cx - 23) + "px"; b.style.top = (cy - 23) + "px"; });
+  if (P.sat === "B") sats.forEach(b => { b.classList.add("hidden"); b.style.transitionDelay = "0ms"; b.style.bottom = (innerHeight - cy) + "px"; });
+  if (P.sat === "C" && pieEl) pieEl.classList.add("hidden");
+}
+// 마우스가 원 버튼이나 위성 버튼 위에 있는 동안은 접힘 시계를 멈춘다(설명을 읽는 동안 접히지 않게). 벗어나면 처음부터 다시 센다.
+let hovering = false;
+function restartTimer() { clearTimeout(collapseTimer); if (hovering) return; collapseTimer = setTimeout(() => { if (!st.askOpen) collapse(); }, st.collapseMs); }
+addEventListener("pointermove", e => {
+  const over = !!(e.target.closest && e.target.closest(".sat, .orb, #pie"));
+  if (over === hovering) return;
+  hovering = over;
+  if (over) clearTimeout(collapseTimer); else if (st.expanded) restartTimer();
+});
+
+function press(key) {
+  if (key === "ask") { collapse(); openAsk(); return; }
+  if (key === "read") { setMode(st.mode === "reading" ? "idle" : "reading"); rebuildKeep(); restartTimer(); return; }
+  if (key === "speed") { st.speed = (st.speed + 1) % SPEEDS.length; toast("배속 x" + SPEEDS[st.speed]); rebuildKeep(); restartTimer(); return; }
+  if (key === "settings") { collapse(); toast("설정 창이 열립니다 (시제품에서는 생략)"); return; }
+  if (key === "quit") { collapse(); toast("프로그램을 끝냅니다 (시제품에서는 생략)"); }
+}
+function rebuildKeep() { const e = st.expanded; build(); if (e) { expand(true); } }
+function openAsk(silent) {
+  st.askOpen = true; askEl.classList.remove("hidden"); effortEl.classList.remove("hidden");
+  if (!silent) setTimeout(() => askInput.focus(), 50);
+}
+function closeAsk() { st.askOpen = false; askEl.classList.add("hidden"); effortEl.classList.add("hidden"); }
+function submit() {
+  if (!askInput.value.trim()) { askInput.focus(); return; }
+  askInput.value = "";
+  setMode("thinking");
+  setTimeout(() => setMode("speaking"), 1200 + st.effort * 700);
+}
+
+function setMode(m) {
+  st.mode = m; st.utter = null;
+  if (m === "reading") st.utter = makeUtter(READ_TEXT, SPEEDS[st.speed], null);
+  if (m === "speaking") {
+    st.sentences = []; st.cPage = 0;
+    st.utter = makeUtter(ANSWER.join(" "), SPEEDS[st.speed], n => { st.cPage = n; });
+    st.sentences = ANSWER.slice();
+  }
+  document.querySelectorAll("#panel [data-mode]").forEach(b => b.classList.toggle("on", b.dataset.mode === m));
+}
+function toast(msg) { const t = document.getElementById("toast"); t.textContent = msg; t.style.opacity = 1; clearTimeout(t._h); t._h = setTimeout(() => t.style.opacity = 0, 1600); }
+
+// ---------------------------------------------------------------- 강아지와 말풍선
+const dogImg = new Image(); dogImg.src = DOG_SRC;
+const dog = document.getElementById("dog"), dctx = dog.getContext("2d");
+const bubble = document.getElementById("bubble");
+let target = { x: innerWidth * 0.45, y: innerHeight * 0.5 }, pos = { ...target }, lastMove = performance.now(), facingLeft = false;
+addEventListener("mousemove", e => { target = { x: e.clientX + 12, y: e.clientY + 8 }; lastMove = performance.now(); });
+
+function drawDog(now, lv) {
+  const dt = 1 / 60;
+  const dx = target.x - pos.x, dy = target.y - pos.y, dist = Math.hypot(dx, dy);
+  const moving = dist > 2;
+  if (moving) { const step = Math.min(dist, 260 * dt + dist * 4 * dt); pos.x += dx / dist * step; pos.y += dy / dist * step; if (Math.abs(dx) > 1.5) facingLeft = dx < 0; }
+  let pose = moving ? "walk" : (now - lastMove > 4000 ? "lie" : "sit"), frame;
+  if (st.mode === "thinking") pose = "think";
+  if (st.mode === "speaking" || st.mode === "reading") pose = "talk";
+  const [row, n, fps] = POSES[pose];
+  frame = pose === "talk" ? (lv < 0.2 ? 0 : lv < 0.55 ? 1 : 2) : Math.floor(now / 1000 * fps) % n;
+  dog.style.transform = `translate(${Math.round(pos.x)}px, ${Math.round(pos.y)}px)`;
+  dctx.imageSmoothingEnabled = false; dctx.clearRect(0, 0, 128, 128);
+  dctx.save(); if (facingLeft) { dctx.translate(128, 0); dctx.scale(-1, 1); }
+  dctx.drawImage(dogImg, frame * 64, row * 64, 64, 64, 0, 0, 128, 128); dctx.restore();
+}
+
+// 말풍선이 다 말한 뒤 남는 시간. A·B·C는 자기 방식, D는 조작판에서 고른 보여 주기 방식.
+function bubbleKind() { return st.vk === "D" ? st.obMode : st.vk; }
+const BUBBLE_HOLD = { A: 3000, B: 0, C: 5000, one: 3000, stack: 3000, page: 5000, stream: 3000, streamS: 3000 };
+function drawBubble(now) {
+  if (st.vk === "D") { bubble.style.display = "none"; drawOceanBubble(now); return; }
+  ob.classList.remove("show");
+  const shown = st.mode === "speaking" || now < st.bubbleUntil;
+  if (!shown || !st.sentences.length) { bubble.style.display = "none"; return; }
+  const bk = st.vk;
+  bubble.className = "v-" + bk; bubble.style.display = "block";
+  const said = Math.min(st.sentences.length, st.cPage + 1);
+  if (bk === "A") {
+    const list = st.sentences.slice(0, said);
+    bubble.innerHTML = list.slice(-3).map((s, i, arr) => `<p class="${i < arr.length - 1 ? "old" : ""}">${s}</p>`).join("");
+  } else if (bk === "B") {
+    bubble.textContent = st.sentences[said - 1];
+  } else {
+    bubble.innerHTML = `${st.sentences[said - 1]}<span class="page">${said} / ${st.sentences.length}</span>`;
+  }
+  const bx = Math.max(8, Math.min(innerWidth - bubble.offsetWidth - 8, pos.x + 36));
+  const by = Math.max(8, pos.y + 18 - bubble.offsetHeight);
+  bubble.style.left = bx + "px"; bubble.style.top = by + "px";
+}
+
+// D안 말풍선: 오션·코랄. 문장이 바뀔 때만 내용을 새로 그려서 등장 움직임이 매 프레임 다시 시작되지 않게 한다.
+const ob = document.getElementById("obubble"), obIn = ob.querySelector(".in");
+const WAVE_PATH = "M0 7 q10 -7 20 0" + " t20 0".repeat(21) + " V14 H0 Z";
+let obKey = "";
+function drawOceanBubble(now) {
+  const shown = (st.mode === "speaking" || now < st.bubbleUntil) && st.sentences.length > 0;
+  const streaming = st.obMode === "stream" || st.obMode === "streamS";
+  const cls = `ob-${st.obStyle}${streaming ? " stream" : ""}${shown ? " show" : ""}`;
+  if (ob.className !== cls) ob.className = cls;
+  if (!shown) { obKey = ""; obIn.dataset.k = ""; return; }
+  const said = Math.min(st.sentences.length, st.cPage + 1);
+  // 스트림: 목소리가 읽기 시작한 낱말까지만 보인다. 다 말한 뒤에는 전부 보인다.
+  let nWords = ANSWER_WORDS.length;
+  if (streaming && st.mode === "speaking" && st.utter) nWords = st.utter.wordT.filter(x => x <= now / 1000 - st.utter.start).length;
+  const key = `${st.obStyle}|${st.obMode}|${streaming ? nWords : said}`;
+  if (key !== obKey) {
+    obKey = key;
+    if (streaming) {
+      const lastS = nWords ? ANSWER_WORDS[nWords - 1].si : 0;
+      const from = st.obMode === "streamS" ? ANSWER_WORDS.findIndex(x => x.si === lastS) : 0;
+      const k = `${st.obStyle}|${st.obMode}`;
+      if (obIn.dataset.k !== k) { obIn.innerHTML = `<div class="cap"><div class="track"></div></div>` + oceanDecor(); obIn.dataset.k = k; }
+      const cap = obIn.querySelector(".cap"), track = obIn.querySelector(".track");
+      track.innerHTML = ANSWER_WORDS.slice(from, nWords)
+        .map((x, i, arr) => `<span${i === arr.length - 1 && st.mode === "speaking" ? ' class="w-new"' : ""}>${x.w}</span>`).join(" ");
+      const over = Math.max(0, track.offsetHeight - cap.clientHeight);
+      const jump = obIn.dataset.from !== String(from);   // 문장마다: 새 문장이면 미끄러지지 않고 바로 맨 위로
+      obIn.dataset.from = from;
+      if (jump) track.style.transition = "none";
+      track.style.transform = `translateY(${-over}px)`;
+      if (jump) { void track.offsetHeight; track.style.transition = ""; }
+      cap.classList.toggle("over", over > 0);
+    } else {
+      let html = st.obMode === "stack"
+        ? st.sentences.slice(Math.max(0, said - 3), said).map((x, i, arr) => `<p class="${i < arr.length - 1 ? "old" : "new"}">${x}</p>`).join("")
+        : `<p class="new">${st.sentences[said - 1]}</p>`;
+      if (st.obMode === "page") html += `<div class="dots">${st.sentences.map((_, i) => `<i class="${i < said ? "on" : ""}"></i>`).join("")}</div>`;
+      obIn.innerHTML = html + oceanDecor(); obIn.dataset.k = "";
+    }
+  }
+  ob.style.setProperty("--lv", smooth.toFixed(3));
+  const lift = st.obStyle === "deep" ? 18 : 0;   // 기포 꼬리가 길어서 그만큼 위로 올린다
+  const bx = Math.max(8, Math.min(innerWidth - ob.offsetWidth - 8, pos.x + 36));
+  const by = Math.max(8, pos.y + 18 - lift - ob.offsetHeight);
+  ob.style.left = bx + "px"; ob.style.top = by + "px";
+}
+// 모양마다 붙는 장식: 파도는 물결 띠, 심해는 올라가는 기포.
+function oceanDecor() {
+  if (st.obStyle === "wave") return `<div class="wavebox"><svg viewBox="0 0 440 14" width="440" height="14"><defs><linearGradient id="wg" x1="0" x2="1">
+      <stop offset="0" stop-color="#0E6BA8"/><stop offset="1" stop-color="#2BB3C0"/></linearGradient></defs><path d="${WAVE_PATH}" fill="url(#wg)"/></svg></div>`;
+  if (st.obStyle === "deep") return `<span class="air"><i></i><i></i><i></i></span>`;
+  return "";
+}
+
+// ---------------------------------------------------------------- 매 프레임
+function loop(nowMs) {
+  const now = nowMs / 1000;
+  const v = voiceAt(st.utter, now);
+  smooth += (v.lv - smooth) * 0.35; toneS += (v.tone - toneS) * 0.08;
+  if (v.done && st.utter) {
+    if (st.mode === "speaking") { st.bubbleUntil = nowMs + BUBBLE_HOLD[bubbleKind()]; setMode("idle"); }
+    else if (st.mode === "reading") { st.utter = makeUtter(READ_TEXT, SPEEDS[st.speed], null); }
+  }
+  const S = VARIANTS[st.vk].canvas;
+  octx.clearRect(0, 0, S, S);
+  DRAW[st.vk](octx, S, now, st.mode, smooth, toneS);
+  drawDog(nowMs, smooth);
+  drawBubble(nowMs);
+  document.getElementById("now").textContent =
+    `지금: ${({ idle: "평상시", reading: "읽는 중", thinking: "생각 중", speaking: "말하는 중" })[st.mode]} · 배속 x${SPEEDS[st.speed]} · 생각 ${EFFORTS[st.effort]} · 목소리 ${smooth.toFixed(2)}`
+    + (st.expanded && hovering ? " · 접힘 멈춤(마우스 올림)" : "");
+  requestAnimationFrame(loop);
+}
+
+// ---------------------------------------------------------------- 조작판, 전환 막대
+document.querySelectorAll("#panel [data-mode]").forEach(b => b.onclick = () => setMode(b.dataset.mode));
+document.querySelectorAll("#panel [data-col]").forEach(b => b.onclick = () => {
+  st.collapseMs = +b.dataset.col; document.querySelectorAll("#panel [data-col]").forEach(x => x.classList.toggle("on", x === b));
+});
+document.querySelectorAll("#panel [data-bg]").forEach(b => b.onclick = () => {
+  document.body.classList.toggle("dark", b.dataset.bg === "dark"); document.querySelectorAll("#panel [data-bg]").forEach(x => x.classList.toggle("on", x === b));
+});
+document.getElementById("pmin").onclick = () => { const p = document.getElementById("panel"); p.classList.toggle("min"); document.getElementById("pmin").textContent = p.classList.contains("min") ? "펴기" : "접기"; };
+for (const [attr, field] of [["obs", "obStyle"], ["obm", "obMode"]]) {
+  document.querySelectorAll(`#panel [data-${attr}]`).forEach(b => b.onclick = () => {
+    st[field] = b.dataset[attr]; document.querySelectorAll(`#panel [data-${attr}]`).forEach(x => x.classList.toggle("on", x === b));
+    if (st.mode !== "speaking") setMode("speaking");
+  });
+  document.querySelector(`#panel [data-${attr}="${st[field]}"]`).classList.add("on");
+}
+document.querySelector('#panel [data-col="4000"]').classList.add("on");
+document.querySelector('#panel [data-bg="light"]').classList.add("on");
+
+function go(d) {
+  const pie = document.getElementById("pie"); if (pie) pie.remove();
+  st.vk = KEYS[(KEYS.indexOf(st.vk) + d + KEYS.length) % KEYS.length];
+  const url = new URL(location.href); url.searchParams.set("variant", st.vk); history.replaceState(null, "", url);
+  build();
+}
+document.getElementById("prev").onclick = () => go(-1);
+document.getElementById("next").onclick = () => go(1);
+addEventListener("keydown", e => {
+  if (e.target.closest("input, textarea, [contenteditable]")) return;
+  if (e.key === "ArrowLeft") go(-1);
+  if (e.key === "ArrowRight") go(1);
+  if (e.key === "Escape") { collapse(); closeAsk(); }
+});
+addEventListener("resize", () => { const pie = document.getElementById("pie"); if (pie) pie.remove(); build(); });
+// 처음 상태를 주소로 지정할 수 있다: ?mode=speaking&open=1&ask=1&ob=coral&obm=stream
+const Q = new URLSearchParams(location.search);
+setMode(["idle", "reading", "thinking", "speaking"].includes(Q.get("mode")) ? Q.get("mode") : "idle");
+dogImg.decode().then(() => {
+  build();
+  if (Q.get("open") === "1") expand();
+  if (Q.get("ask") === "1") openAsk(true);
+  requestAnimationFrame(loop);
+});
+</script>
+</body>
+</html>
