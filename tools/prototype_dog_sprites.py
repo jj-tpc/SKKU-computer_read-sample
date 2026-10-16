@@ -27,7 +27,7 @@ POSES = [
     ("walk", "걷기 (이동)", 4, 8),
     ("sit", "앉기", 4, 4),
     ("think", "생각 중", 4, 3),
-    ("talk", "말하기", 3, 8),
+    ("talk", "말하기", 4, 8),   # 입: 닫힘, 조금, 크게, 가로(ㅣ·ㅔ 같은 소리)
     ("happy", "기뻐하기", 4, 8),
 ]
 
@@ -319,8 +319,8 @@ def skeleton(v, pose, f):
             k["mouth"] = "small"
             k["dots"] = [1, 2, 3, 3][f]
         if pose == "talk":
-            k["mouth"] = ["closed", "small", "open"][f]
-            hy += [0, 0, -1][f]
+            k["mouth"] = ["closed", "small", "open", "wide"][f]
+            hy += [0, 0, -1, 0][f]
         if pose == "sit":
             k["eyes"] = "blink" if f == 3 else "open"
         k["head"] = (bcx + brx * 0.55, hy, tilt)
@@ -590,6 +590,11 @@ def draw_dog(vk, pose, f):
         sp.dot(mox, moy, line); sp.dot(mox + 1, moy + 1, line); sp.dot(mox + 2, moy, line)
     elif m == "small":
         sp.dot(mox + 1, moy, P["nose"]); sp.dot(mox + 1, moy + 1, P["nose"]); sp.dot(mox + 2, moy, P["nose"])
+    elif m == "wide":  # 입꼬리를 옆으로 당겨 가늘게 벌린 입 (ㅣ, ㅔ 같은 소리)
+        for ddx in range(-1, 4):
+            sp.dot(mox + ddx, moy, P["nose"])
+        for ddx in range(3):
+            sp.dot(mox + ddx, moy + 1, dark(P["nose"], 0.8))
     elif m in ("open", "tongue"):
         for ddx in range(3):
             for ddy in range(2):
