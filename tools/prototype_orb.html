@@ -431,6 +431,7 @@ const SAT_ITEMS = () => [
   { key: "ask", A: "?", B: ["?", "질문하기"], C: "질문", tip: "질문하기" },
   { key: "read", A: st.mode === "reading" ? "■" : "▶", B: [st.mode === "reading" ? "■" : "▶", st.mode === "reading" ? "정지" : "읽기"], C: st.mode === "reading" ? "정지" : "읽기", tip: st.mode === "reading" ? "정지" : "읽기" },
   { key: "speed", A: "x" + SPEEDS[st.speed], B: ["x", "배속 x" + SPEEDS[st.speed]], C: "x" + SPEEDS[st.speed], tip: "배속 (누를 때마다 바뀜)" },
+  { key: "files", A: "📂", B: ["📂", "발표 자료"], C: "자료", tip: "발표 자료 (파일·대본)" },
   { key: "settings", A: "⚙", B: ["⚙", "설정"], C: "설정", tip: "설정" },
   { key: "quit", A: "✕", B: ["✕", "끝내기"], C: "끝내기", tip: "끝내기" },
 ];
@@ -491,7 +492,8 @@ function build() {
     SAT_ITEMS().forEach((it, i) => {
       const b = document.createElement("button"); b.className = `sat A${theme} hidden`;
       b.innerHTML = `${it.A}<span class="tip">${it.tip}</span>`;
-      const a = Math.PI + (i / 4) * (Math.PI / 2), r = 132;
+      // 여섯 개가 46px 동그라미로 겹치지 않으려면 반지름이 170px은 되어야 한다(가운데 사이 약 53px).
+      const a = Math.PI + (i / (SAT_ITEMS().length - 1)) * (Math.PI / 2), r = 170;
       b.dataset.x = cx + Math.cos(a) * r - 23; b.dataset.y = cy + Math.sin(a) * r - 23;
       b.style.left = (cx - 23) + "px"; b.style.top = (cy - 23) + "px";
       b.onclick = e => { e.stopPropagation(); press(it.key); };
@@ -572,6 +574,7 @@ function press(key) {
   if (key === "ask") { collapse(); openAsk(); return; }
   if (key === "read") { setMode(st.mode === "reading" ? "idle" : "reading"); rebuildKeep(); restartTimer(); return; }
   if (key === "speed") { st.speed = (st.speed + 1) % SPEEDS.length; toast("배속 x" + SPEEDS[st.speed]); rebuildKeep(); restartTimer(); return; }
+  if (key === "files") { collapse(); toast("발표 자료 창이 열립니다 (설정 창 시제품 참고)"); return; }
   if (key === "settings") { collapse(); toast("설정 창이 열립니다 (시제품에서는 생략)"); return; }
   if (key === "quit") { collapse(); toast("프로그램을 끝냅니다 (시제품에서는 생략)"); }
 }
