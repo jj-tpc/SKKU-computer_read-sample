@@ -1,0 +1,231 @@
+<!doctype html>
+<!-- 시제품 — 도트 강아지 미리보기 틀. prototype_dog_sprites.py가 /*META*/ 자리에 스프라이트를 채워 넣는다. -->
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>도트 강아지 시제품</title>
+<style>
+  :root { --bg:#f4f5f7; --panel:#fff; --ink:#1d2330; --mute:#667085; --line:#dfe3ea; --accent:#2f6fed; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:"Malgun Gothic","Apple SD Gothic Neo",system-ui,sans-serif; background:var(--bg); color:var(--ink); padding:24px 16px 96px; }
+  main { max-width:1040px; margin:0 auto; }
+  h1 { font-size:22px; margin:0 0 4px; }
+  h2 { font-size:16px; margin:28px 0 10px; }
+  .desc { color:var(--mute); margin:0 0 16px; }
+  .controls { display:flex; flex-wrap:wrap; gap:16px; align-items:center; background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:10px 14px; }
+  .controls label { font-size:13px; color:var(--mute); margin-right:6px; }
+  .seg { display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+  .seg button { border:0; background:#fff; padding:6px 10px; font:inherit; font-size:13px; cursor:pointer; }
+  .seg button + button { border-left:1px solid var(--line); }
+  .seg button.on { background:var(--accent); color:#fff; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:12px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:10px; display:flex; flex-direction:column; align-items:center; gap:8px; }
+  .card .stage { display:flex; align-items:flex-end; justify-content:center; width:100%; min-height:140px; border-radius:6px; }
+  .card .name { font-weight:600; font-size:14px; }
+  .card .meta { font-size:12px; color:var(--mute); }
+  .strip { image-rendering:pixelated; border-radius:4px; max-width:100%; }
+  canvas { image-rendering:pixelated; }
+  .bg-white { background:#ffffff; }
+  .bg-dark { background:#252a35; }
+  .bg-photo { background:linear-gradient(135deg,#7fb3d5 0%,#c3e0c8 45%,#f7d9a8 100%); }
+  .slide { position:relative; width:100%; aspect-ratio:16/9; border-radius:8px; overflow:hidden; border:1px solid var(--line); cursor:default; user-select:none; }
+  .slide .content { position:absolute; inset:7% 8%; }
+  .slide h3 { margin:0 0 4%; font-size:clamp(18px,3.4vw,34px); }
+  .slide ul { margin:0; padding-left:1.2em; font-size:clamp(13px,2vw,20px); line-height:1.7; }
+  .slide.bg-dark { color:#eef1f6; }
+  .slide.bg-photo { color:#1d2330; }
+  #pet { position:absolute; left:0; top:0; pointer-events:none; }
+  #bubble { position:absolute; display:none; max-width:260px; background:#fff; color:#1d2330; border:2px solid #3a2216; border-radius:12px; padding:8px 12px; font-size:14px; pointer-events:none; box-shadow:0 2px 0 #3a2216; }
+  .acts { display:flex; gap:8px; margin:10px 0 0; flex-wrap:wrap; }
+  .acts button { border:1px solid var(--line); background:#fff; border-radius:8px; padding:6px 12px; font:inherit; font-size:13px; cursor:pointer; }
+  .note { font-size:12px; color:var(--mute); margin-top:8px; }
+  .state { font-size:13px; color:var(--mute); }
+  /* 시제품 전환 막대 — 평가 대상 화면이 아님 */
+  #switcher { position:fixed; left:50%; bottom:18px; transform:translateX(-50%); display:flex; align-items:center; gap:10px; background:#111827; color:#fff; border-radius:999px; padding:8px 10px; box-shadow:0 6px 20px rgba(0,0,0,.25); font-size:14px; z-index:10; }
+  #switcher button { width:32px; height:32px; border-radius:50%; border:0; background:#374151; color:#fff; font-size:14px; cursor:pointer; }
+  #switcher .label { min-width:170px; text-align:center; font-weight:600; }
+</style>
+</head>
+<body>
+<main>
+  <h1>도트 강아지 시제품 <span id="vname"></span></h1>
+  <p class="desc" id="vdesc"></p>
+
+  <div class="controls">
+    <div><label>배율</label><span class="seg" id="scale"></span></div>
+    <div><label>배경</label><span class="seg" id="bg"></span></div>
+    <div><label>방향</label><span class="seg" id="dir"></span></div>
+    <div class="state" id="dpr"></div>
+  </div>
+
+  <h2>자세 (원본 64×64)</h2>
+  <div class="grid" id="poses"></div>
+
+  <h2>슬라이드 위에서 — 마우스를 슬라이드 위에서 움직여 보세요</h2>
+  <div class="slide bg-white" id="slide">
+    <div class="content">
+      <h3>인공지능이란?</h3>
+      <ul>
+        <li>사람처럼 배우고 판단하는 컴퓨터 프로그램</li>
+        <li>데이터에서 규칙을 스스로 찾아냄</li>
+        <li>번역, 음성 인식, 그림 그리기 등에 활용</li>
+      </ul>
+    </div>
+    <canvas id="pet"></canvas>
+    <div id="bubble">인공지능은 데이터에서 스스로 규칙을 찾아요!</div>
+  </div>
+  <div class="acts">
+    <button data-act="think">생각 중 (3초)</button>
+    <button data-act="talk">말하기 (3초)</button>
+    <button data-act="happy">기뻐하기 (3초)</button>
+    <span class="state" id="petstate"></span>
+  </div>
+  <p class="note">커서가 움직이면 걷고, 멈추면 앉고, 4초 넘게 가만히 있으면 엎드립니다. 강아지는 커서의 오른쪽 아래에 붙습니다. 슬라이드는 실제 발표 화면보다 작게 줄어 있으니, 강아지 크기는 슬라이드 글자와 비교해 보세요.</p>
+</main>
+
+<div id="switcher" aria-label="시제품 전환">
+  <button id="prev" title="이전 (←)">◀</button>
+  <span class="label" id="swlabel"></span>
+  <button id="next" title="다음 (→)">▶</button>
+</div>
+
+<script>
+const META = /*META*/null;
+const S = META.size;
+const KEYS = Object.keys(META.variants);
+const POSE = Object.fromEntries(META.poses.map((p, i) => [p.key, { ...p, row: i }]));
+const sheets = {};
+for (const k of KEYS) { const im = new Image(); im.src = META.variants[k].sheet; sheets[k] = im; }
+
+const params = new URLSearchParams(location.search);
+let vk = KEYS.includes(params.get('variant')) ? params.get('variant') : KEYS[0];
+let scale = 2, bg = 'bg-white', flip = false;
+
+function seg(el, items, get, set) {
+  el.innerHTML = '';
+  for (const [val, text] of items) {
+    const b = document.createElement('button');
+    b.textContent = text;
+    b.className = get() === val ? 'on' : '';
+    b.onclick = () => { set(val); seg(el, items, get, set); render(); };
+    el.appendChild(b);
+  }
+}
+seg(document.getElementById('scale'), [[1,'×1 (64px)'],[2,'×2 (128px)'],[3,'×3 (192px)'],[4,'×4']], () => scale, v => scale = v);
+seg(document.getElementById('bg'), [['bg-white','흰 슬라이드'],['bg-dark','어두운 슬라이드'],['bg-photo','사진 배경']], () => bg, v => bg = v);
+seg(document.getElementById('dir'), [[false,'오른쪽 보기'],[true,'왼쪽 보기']], () => flip, v => flip = v);
+document.getElementById('dpr').textContent = `배율은 CSS 픽셀 기준 · 이 화면의 devicePixelRatio = ${window.devicePixelRatio}`;
+
+function drawFrame(ctx, k, pose, f, sc, flipped) {
+  const p = POSE[pose];
+  ctx.imageSmoothingEnabled = false;
+  ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+  ctx.save();
+  if (flipped) { ctx.translate(S * sc, 0); ctx.scale(-1, 1); }
+  ctx.drawImage(sheets[k], f * S, p.row * S, S, S, 0, 0, S * sc, S * sc);
+  ctx.restore();
+}
+
+const cards = [];
+function render() {
+  const v = META.variants[vk];
+  document.getElementById('vname').textContent = `— ${vk}. ${v.label}`;
+  document.getElementById('vdesc').textContent = v.desc;
+  document.getElementById('swlabel').textContent = `${vk} — ${v.label}`;
+  const grid = document.getElementById('poses');
+  grid.innerHTML = '';
+  cards.length = 0;
+  for (const p of META.poses) {
+    const card = document.createElement('div');
+    card.className = 'card';
+    const stage = document.createElement('div');
+    stage.className = 'stage ' + bg;
+    const c = document.createElement('canvas');
+    c.width = S * scale; c.height = S * scale;
+    stage.appendChild(c);
+    const strip = document.createElement('canvas');
+    strip.className = 'strip';
+    strip.width = S * p.frames; strip.height = S;
+    const sctx = strip.getContext('2d');
+    sctx.fillStyle = bg === 'bg-dark' ? '#252a35' : '#ffffff';
+    sctx.fillRect(0, 0, strip.width, strip.height);
+    sctx.drawImage(sheets[vk], 0, POSE[p.key].row * S, S * p.frames, S, 0, 0, S * p.frames, S);
+    card.innerHTML = `<div class="name">${p.label}</div><div class="meta">${p.frames}프레임 · 초당 ${p.fps}장</div>`;
+    card.insertBefore(stage, card.firstChild);
+    card.appendChild(strip);
+    grid.appendChild(card);
+    cards.push({ ctx: c.getContext('2d'), pose: p.key });
+  }
+  const slide = document.getElementById('slide');
+  slide.className = 'slide ' + bg;
+  pet.width = S * scale; pet.height = S * scale;
+  const url = new URL(location.href);
+  url.searchParams.set('variant', vk);
+  history.replaceState(null, '', url);
+}
+
+// ---- 슬라이드 위 강아지
+const slide = document.getElementById('slide');
+const pet = document.getElementById('pet');
+const pctx = pet.getContext('2d');
+const bubble = document.getElementById('bubble');
+let target = { x: 200, y: 200 }, pos = { x: 200, y: 200 };
+let lastMove = performance.now(), facingLeft = false, forced = null, forcedUntil = 0;
+slide.addEventListener('mousemove', e => {
+  const r = slide.getBoundingClientRect();
+  target = { x: e.clientX - r.left + 12, y: e.clientY - r.top + 8 };
+  lastMove = performance.now();
+});
+document.querySelectorAll('.acts button').forEach(b => b.onclick = () => {
+  forced = b.dataset.act; forcedUntil = performance.now() + 3000;
+});
+
+function petPose(now, moving) {
+  if (forced && now < forcedUntil) return forced;
+  forced = null;
+  if (moving) return 'walk';
+  return now - lastMove > 4000 ? 'lie' : 'sit';
+}
+
+let prev = performance.now();
+function tick(now) {
+  const dt = Math.min(0.05, (now - prev) / 1000); prev = now;
+  for (const c of cards) {
+    const p = POSE[c.pose];
+    drawFrame(c.ctx, vk, c.pose, Math.floor(now / 1000 * p.fps) % p.frames, scale, flip);
+  }
+  const dx = target.x - pos.x, dy = target.y - pos.y;
+  const dist = Math.hypot(dx, dy);
+  const speed = 260 * scale / 2;
+  const moving = dist > 2;
+  if (moving) {
+    const step = Math.min(dist, speed * dt + dist * 4 * dt);
+    pos.x += dx / dist * step; pos.y += dy / dist * step;
+    if (Math.abs(dx) > 1.5) facingLeft = dx < 0;
+  }
+  const pose = petPose(now, moving);
+  const p = POSE[pose];
+  pet.style.transform = `translate(${Math.round(pos.x)}px, ${Math.round(pos.y)}px)`;
+  drawFrame(pctx, vk, pose, Math.floor(now / 1000 * p.fps) % p.frames, scale, facingLeft !== flip ? true : false);
+  bubble.style.display = pose === 'talk' ? 'block' : 'none';
+  if (pose === 'talk') {
+    bubble.style.left = Math.round(pos.x + S * scale * 0.4) + 'px';
+    bubble.style.top = Math.round(pos.y - 52) + 'px';
+  }
+  document.getElementById('petstate').textContent = `지금 자세: ${META.poses[POSE[pose].row].label}`;
+  requestAnimationFrame(tick);
+}
+
+function go(d) { vk = KEYS[(KEYS.indexOf(vk) + d + KEYS.length) % KEYS.length]; render(); }
+document.getElementById('prev').onclick = () => go(-1);
+document.getElementById('next').onclick = () => go(1);
+document.addEventListener('keydown', e => {
+  if (e.target.closest('input, textarea, [contenteditable]')) return;
+  if (e.key === 'ArrowLeft') go(-1);
+  if (e.key === 'ArrowRight') go(1);
+});
+Promise.all(Object.values(sheets).map(im => im.decode())).then(() => { render(); requestAnimationFrame(tick); });
+</script>
+</body>
+</html>
