@@ -211,3 +211,32 @@ def test_open_old_format_and_broken(session, tmp_path):
     assert not session.open_file(broken)
     assert session.events["message"][-1][1].startswith("파일을 열 수 없습니다.\n")
     assert len(session.deck.slides) == 6  # 앞서 연 파일은 그대로
+
+
+def test_cloud_voice_failure_notices(session, app_home):
+    session.settings.set_for("key_ok", "elevenlabs", True)
+    session.cloud_voice_failed("elevenlabs", "network")
+    assert session.events["notice"][-1] == "ElevenLabs 목소리를 쓸 수 없어 운영체제 음성으로 읽어요."
+    assert Settings(app_home)["key_ok"]["elevenlabs"]  # 인터넷 문제는 다음 장에서 다시 시도
+    session.cloud_voice_failed("elevenlabs", "key")
+    assert session.events["notice"][-1] == "ElevenLabs 키가 맞지 않아 운영체제 음성으로 읽어요."
+    assert not Settings(app_home)["key_ok"]["elevenlabs"]  # 키를 다시 확인할 때까지 운영체제 음성
+    session.cloud_voice_failed("gemini", "quota")
+    assert session.events["notice"][-1] == "Gemini 사용량 한도라 운영체제 음성으로 읽어요."
+
+
+def test_cloud_voice_chosen_is_saved(session, app_home):
+    from ppt_reader.voice.engines import Voice
+
+    session.cloud_voice_chosen("elevenlabs", Voice("a1", "Anna", ""))
+    assert Settings(app_home)["cloud_voice"]["elevenlabs"]["voice_id"] == "a1"
+    assert Settings(app_home)["cloud_voice"]["elevenlabs"]["voice_name"] == "Anna"
+
+
+def test_script_changes_are_announced(session):
+    changed = []
+    session.on_script = changed.append
+    session.set_edit(2, "새 대본")
+    session.reset_edit(2)
+    session.set_options(source="body")
+    assert changed == [2, 2, -1]  # -1: 모든 장(대본 소리를 다시 만든다)

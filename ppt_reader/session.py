@@ -13,6 +13,7 @@ from typing import Callable, Protocol
 from .link import LinkError, PptState, resolve_local_path
 from .settings import SPEEDS, Edits, Settings
 from .slides import Deck, load_deck, to_speech
+from .voice.cloud import PROVIDER_NAMES
 
 EMPTY_SLIDE_PAUSE = 1.5  # 읽을 글이 없는 장에서 자동 발표가 쉬는 시간(초)
 
@@ -24,6 +25,9 @@ UNKNOWN_PATH = ("PowerPoint의 '{name}' 파일 위치를 알 수 없습니다. "
 RELOADED = "PowerPoint에서 저장한 내용을 다시 불러왔습니다."
 LINK_LOST = "PowerPoint 연결이 끊겼어요"
 VOICE_FAILED = "목소리를 낼 수 없어요. 출력 장치를 확인하세요."
+CLOUD_KEY = "{provider} 키가 맞지 않아 운영체제 음성으로 읽어요."
+CLOUD_QUOTA = "{provider} 사용량 한도라 운영체제 음성으로 읽어요."
+CLOUD_OTHER = "{provider} 목소리를 쓸 수 없어 운영체제 음성으로 읽어요."
 CHIP_SHOW = "PowerPoint 연결됨 · 쇼 진행 중 {n}번 장"
 CHIP_EDIT = "PowerPoint 연결됨 · 편집 화면 {n}번 장"
 CHIP_SEARCHING = "PowerPoint 찾는 중…"
@@ -79,6 +83,7 @@ class Session:
         self.on_message: Callable[[str, str], None] = _noop  # (종류 "warning"/"error"/"info", 문구) 대화상자
         self.on_link: Callable[[str], None] = _noop  # 연동 칩 문구
         self.on_pose: Callable[[str], None] = _noop  # 강아지 자세 요청 ("happy")
+        self.on_script: Callable[[int], None] = _noop  # 대본이 바뀐 장(-1이면 모든 장). 대본 소리를 다시 만든다
 
     # ------------------------------------------------------------ 음성과 설정
 
@@ -100,6 +105,7 @@ class Session:
         self.settings.set(**values)
         if source_changed and self.deck is not None:
             self._load_edits()
+            self.on_script(-1)  # 모든 장의 대본이 바뀌었다
             self.on_slide(self.current)
 
     def cycle_speed(self) -> float:
@@ -173,6 +179,20 @@ class Session:
             self._set_state(IDLE)
             self.on_notice(VOICE_FAILED)
 
+    def cloud_voice_failed(self, provider: str, kind: str) -> None:
+        """클라우드 음성이 실패해 운영체제 음성으로 이어 읽는다. 키 문제·한도면 키를 다시 확인할 때까지 쓰지 않는다."""
+        if kind in ("key", "quota"):
+            self.settings.set_for("key_ok", provider, False)
+        text = {"key": CLOUD_KEY, "quota": CLOUD_QUOTA}.get(kind, CLOUD_OTHER)
+        self.on_notice(text.format(provider=PROVIDER_NAMES.get(provider, provider)))
+
+    def cloud_voice_chosen(self, provider: str, voice) -> None:
+        """ElevenLabs 목소리를 고르지 않았을 때 엔진이 고른 첫 목소리를 저장한다."""
+        if provider == "elevenlabs":
+            cloud = {**self.settings["cloud_voice"]}
+            cloud["elevenlabs"] = {**cloud["elevenlabs"], "voice_id": voice.id, "voice_name": voice.name}
+            self.settings.set(cloud_voice=cloud)
+
     def _next_index(self, i: int) -> int | None:
         for j in range(i + 1, len(self.deck.slides)):
             if not self.deck.slides[j].hidden:  # 숨긴 장은 슬라이드 쇼처럼 건너뛴다
@@ -235,6 +255,7 @@ class Session:
         else:
             self.edits[slide.number] = text
             self.edits_store.put(self.deck.path, slide.number, text, original)
+        self.on_script(i)
 
     def reset_edit(self, i: int) -> None:
         if self.deck is None or not (0 <= i < len(self.deck.slides)):
@@ -243,6 +264,7 @@ class Session:
         self.edits.pop(number, None)
         self.source_changed.discard(number)
         self.edits_store.remove(self.deck.path, number)
+        self.on_script(i)
         self.on_slide(self.current)
 
     def _load_edits(self) -> None:

@@ -818,6 +818,7 @@ class Provider:
   3. 기본 음성으로 한 문장을 합성한다. 재생은 하지 않는다.
   4. 설정 폴더 경로를 출력한다.
   5. macOS면 pyobjc 보조가 적용됐는지 확인한다.
+  6. 소리는 내지 않고 `QMediaPlayer`의 음높이 유지(`pitchCompensationAvailability`)가 `Unavailable`이 아닌지 본다. FFmpeg 백엔드가 묶였는지 빌드 서버에서 알 수 있다. 출력 장치 수도 적는다.
   - 빌드 서버와 받는 사람 확인에 쓴다.
 - **옵션이 없으면**: `ui.app.run(file)`.
 - 근거: 16, 17.

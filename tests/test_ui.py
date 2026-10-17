@@ -25,7 +25,7 @@ def controller(qtbot, app_home, monkeypatch):
     session = Session(settings, FakeVoice(), FakeClock(), link_factory=FakeLink)
     session.open_file(SAMPLE)
     closed = []
-    c = app_mod.Controller(settings, session, [lambda: closed.append(True)])
+    c = app_mod.Controller(settings, session, closers=[lambda: closed.append(True)])
     c.closed = closed
     c.start()
     qtbot.waitExposed(c.orb)

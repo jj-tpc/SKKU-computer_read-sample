@@ -34,24 +34,28 @@ def main(argv: list[str] | None = None) -> int:
             pass
 
     if args.list_voices:
-        from .tts import Speaker
+        from .voice.engines import EngineUnavailable, make_engine
 
-        sp = Speaker(lambda *a: None)
-        for v in sp.voices():
+        try:
+            engine = make_engine()
+        except EngineUnavailable as e:
+            print(e)
+            return 1
+        for v in engine.voices():
             print(f"{'*' if v.is_korean else ' '} {v.name}  [{v.lang}]")
-        sp.close()
         return 0
 
     if args.list_outputs:
-        from .tts import Speaker
+        from PySide6.QtCore import QCoreApplication
 
-        sp = Speaker(lambda *a: None)
-        default = sp.default_output()
-        for o in sp.outputs():
+        from .voice.player import default_output, list_outputs
+
+        _app = QCoreApplication.instance() or QCoreApplication(sys.argv[:1])  # noqa: F841 (장치 목록에 필요)
+        default = default_output()
+        for o in list_outputs():
             print(f"{'*' if default and o.id == default.id else ' '} {o.name}")
         if default:
             print("(* = 지금 기본 출력 장치)")
-        sp.close()
         return 0
 
     if args.probe_ppt:
@@ -94,42 +98,65 @@ def _console_out():
 
 
 def _say(slides, args) -> int:
-    from .slides import to_speech
-    from .tts import Speaker
+    """화면 없이 운영체제 음성으로 읽는다. 앱과 같은 음성 흐름(문장 합성, Qt 재생, 배속 늘이기)을 쓴다."""
+    import signal
 
-    events: queue.Queue = queue.Queue()
-    sp = Speaker(lambda kind, tag, info: events.put((kind, tag, info)))
-    voice_id = None
+    os.environ.setdefault("QT_MEDIA_BACKEND", "ffmpeg")
+    from PySide6.QtCore import QCoreApplication, QTimer
+
+    from .slides import to_speech
+    from .ui.qtcore import MainThreadInvoker
+    from .voice.engines import EngineUnavailable, make_engine
+    from .voice.pipeline import Pipeline, VoiceThread
+    from .voice.player import Player, list_outputs
+
+    try:
+        engine = make_engine()
+    except EngineUnavailable as e:
+        print(e)
+        return 1
+    app = QCoreApplication.instance() or QCoreApplication(sys.argv[:1])
+    voices = engine.voices()
     if args.voice:
-        voice_id = next((v.id for v in sp.voices() if args.voice.lower() in v.name.lower()), None)
+        voice_id = next((v.id for v in voices if args.voice.lower() in v.name.lower()), None)
         if voice_id is None:
             print(f"'{args.voice}' 음성을 찾지 못해 기본 음성으로 읽습니다.")
     else:
-        voice_id = next((v.id for v in sp.voices() if v.is_korean), None)
+        voice_id = next((v.id for v in voices if v.is_korean), None)
     output_id = None
     if args.output:
-        output_id = next((o.id for o in sp.outputs() if args.output.lower() in o.name.lower()), None)
+        output_id = next((o.id for o in list_outputs() if args.output.lower() in o.name.lower()), None)
         if output_id is None:
             print(f"'{args.output}' 출력 장치를 찾지 못해 기본 장치로 읽습니다. (--list-outputs 로 확인)")
-    try:
-        for s in slides:
-            text = to_speech(s.script(args.source))
-            if not text:
-                continue
-            print(f"[{s.number}] {text}")
-            sp.speak(text, voice_id, args.speed, tag=s.number, output_id=output_id)
-            while True:
-                kind, tag, info = events.get()
-                if kind == "error":
-                    print("오류:", info)
-                    return 1
-                if kind == "done" and tag == s.number:
-                    break
-    except KeyboardInterrupt:
-        sp.stop()
-    finally:
-        sp.close()
-    return 0
+    todo = [(s.number, to_speech(s.script(args.source))) for s in slides]
+    todo = [(n, t) for n, t in todo if t]
+    invoker = MainThreadInvoker()
+    pipeline = Pipeline(engine, Player(), VoiceThread(invoker.post), lambda: None)
+    result = {"code": 0}
+
+    def next_slide(_tag=None, completed=True):
+        if not completed or not todo:
+            app.quit()
+            return
+        number, text = todo.pop(0)
+        print(f"[{number}] {text}")
+        pipeline.speak(text, voice_id, args.speed, tag=number, output_id=output_id)
+
+    def failed(_tag, message):
+        print("오류:", message)
+        result["code"] = 1
+        app.quit()
+
+    pipeline.on_done = next_slide
+    pipeline.on_error = failed
+    signal.signal(signal.SIGINT, lambda *_: app.quit())
+    tick = QTimer()
+    tick.start(200)  # Qt 이벤트 루프 중에도 파이썬이 Ctrl+C를 받게 깨운다
+    tick.timeout.connect(lambda: None)
+    QTimer.singleShot(0, next_slide)
+    app.exec()
+    pipeline.close()
+    return result["code"]
 
 
 def _probe_ppt() -> int:

@@ -18,8 +18,12 @@ APP_FOLDER = "PPT읽어주기"
 OLD_SETTINGS = Path.home() / ".ppt_reader_settings.json"
 VERSION = 2
 SPEEDS = (1.0, 1.5, 2.0, 5.0)
-PROVIDERS = ("claude", "openai", "gemini")
+PROVIDERS = ("claude", "openai", "gemini")  # 질의응답 LLM
+KEY_OWNERS = PROVIDERS + ("elevenlabs",)  # 키는 회사마다 하나. Gemini 음성은 질의응답의 Gemini 키를 함께 쓴다
 DEFAULT_MODELS = {"claude": "claude-haiku-5-5", "openai": "gpt-6-luna", "gemini": "gemini-3.5-flash-lite"}
+VOICE_ENGINES = ("os", "elevenlabs", "gemini")
+ELEVENLABS_MODELS = ("eleven_multilingual_v2", "eleven_flash_v2_5", "eleven_v4")
+GEMINI_TTS_MODELS = ("gemini-3.8-flash-tts", "gemini-3.8-flash-lite-tts")
 DOGS = ("shiba", "bichon", "beagle")
 _SOURCE_KEYS = tuple(k for k, _ in SOURCES)
 
@@ -44,12 +48,17 @@ def defaults() -> dict:
         "voice": "",
         "output": None,  # None = 운영체제의 기본 출력 장치
         "speed": 1.0,
+        "voice_engine": "os",
+        "cloud_voice": {
+            "elevenlabs": {"model": ELEVENLABS_MODELS[0], "voice_id": "", "voice_name": ""},
+            "gemini": {"model": GEMINI_TTS_MODELS[0], "voice": "Kore"},
+        },
         "auto_next": False,
         "read_on_change": True,
         "provider": "claude",
         "models": dict(DEFAULT_MODELS),
-        "keys": {p: "" for p in PROVIDERS},
-        "key_ok": {p: False for p in PROVIDERS},
+        "keys": {p: "" for p in KEY_OWNERS},
+        "key_ok": {p: False for p in KEY_OWNERS},
         "persona": "",
         "captions": False,
         "dog": "shiba",
@@ -89,9 +98,23 @@ def _clean(raw: dict) -> dict:
     for key, kind, empty_ok in (("models", str, False), ("keys", str, True), ("key_ok", bool, True)):
         given = raw.get(key)
         if isinstance(given, dict):
-            for p in PROVIDERS:
+            for p in d[key]:
                 if isinstance(given.get(p), kind) and (empty_ok or given[p]):
                     d[key][p] = given[p]
+    if raw.get("voice_engine") in VOICE_ENGINES:
+        d["voice_engine"] = raw["voice_engine"]
+    cloud = raw.get("cloud_voice")
+    if isinstance(cloud, dict):
+        for engine, fields in d["cloud_voice"].items():
+            given = cloud.get(engine)
+            if isinstance(given, dict):
+                for field in fields:
+                    if isinstance(given.get(field), str):
+                        fields[field] = given[field]
+            base = defaults()["cloud_voice"][engine]
+            for field in ("model", "voice"):
+                if field in fields and not fields[field]:
+                    fields[field] = base[field]
     if raw.get("dog") in DOGS:
         d["dog"] = raw["dog"]
     if isinstance(raw.get("monitor"), str) and raw["monitor"]:

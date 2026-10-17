@@ -7,76 +7,36 @@ import threading
 import time
 from typing import Callable
 
-from PySide6.QtCore import QObject, Qt, QTimer, Signal, Slot, qVersion
+from PySide6.QtCore import QObject, QTimer, qVersion
 from PySide6.QtGui import QCursor, QGuiApplication, QScreen
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from ..session import Session
 from ..settings import DOGS, Settings, app_folder
+from ..slides import to_speech
+from ..voice.cache import sentence_plan
+from ..voice.cloud import cloud_engine
 from . import platform_mac, theme
 from .dog import FEET_Y, FRAMES, SWEAT_ROW, DogWindow, load_sheet
 from .orb import R, OrbWindow, corner_center
+from .qtcore import MainThreadInvoker, QtClock
 
 APP_TITLE = "PPT 읽어주기"
 FRAME_MS = 33  # 강아지와 원 버튼을 함께 그리는 타이머(약 30fps)
 HAPPY_SECONDS = 1.5
 
 
-class MainThreadInvoker(QObject):
-    """다른 스레드에서 부른 함수를 Qt 주 스레드에서 돌린다."""
-    _call = Signal(object, object)
-
-    def __init__(self):
-        super().__init__()
-        self._call.connect(self._run, Qt.ConnectionType.QueuedConnection)
-
-    @Slot(object, object)
-    def _run(self, fn, args):
-        fn(*args)
-
-    def wrap(self, fn: Callable) -> Callable:
-        return lambda *args: self._call.emit(fn, args)
-
-
-class _TimerHandle:
-    def __init__(self, timer: QTimer, alive: set):
-        self._timer, self._alive = timer, alive
-
-    def cancel(self) -> None:
-        self._timer.stop()
-        self._alive.discard(self._timer)
-
-
-class QtClock:
-    """session이 쓰는 시계. 시험에서는 가짜 시계로 바뀐다."""
-
-    def __init__(self):
-        self._alive: set[QTimer] = set()  # 파이썬 쪽에서 붙잡아 두어야 타이머가 사라지지 않는다
-
-    def now(self) -> float:
-        return time.monotonic()
-
-    def call_later(self, seconds: float, fn: Callable[[], None]) -> _TimerHandle:
-        timer = QTimer()
-        timer.setSingleShot(True)
-
-        def fire():
-            self._alive.discard(timer)
-            fn()
-
-        timer.timeout.connect(fire)
-        self._alive.add(timer)
-        timer.start(max(0, int(seconds * 1000)))
-        return _TimerHandle(timer, self._alive)
-
-
 class Controller(QObject):
     """창들을 띄우고 session의 알림을 화면에 옮긴다."""
 
-    def __init__(self, settings: Settings, session: Session, closers: list[Callable[[], None]] | None = None):
+    def __init__(self, settings: Settings, session: Session, pipeline=None, presynth=None,
+                 closers: list[Callable[[], None]] | None = None):
         super().__init__()
         self.settings = settings
         self.session = session
+        self.pipeline = pipeline
+        self.presynth = presynth
+        self.presynth_state: tuple[str, int, int, str] = ("off", 0, 0, "")  # (상태, 만든 수, 전체, 실패 이유). 설정 창이 보인다
         self.closers = closers or []
         self.dog = DogWindow(settings["dog"])
         self.orb = OrbWindow(self.on_action)
@@ -86,9 +46,11 @@ class Controller(QObject):
         self._timer = QTimer(self)
         self._timer.setInterval(FRAME_MS)
         self._timer.timeout.connect(self._frame)
-        session.on_state = self.orb.set_state
+        session.on_state = self._on_state
         session.on_pose = self._on_pose
         session.on_message = self._on_message
+        session.on_deck = lambda _deck: self.start_presynth()
+        session.on_script = self._on_script
 
     def start(self) -> None:
         self._place()
@@ -117,9 +79,51 @@ class Controller(QObject):
     def _frame(self) -> None:
         now = time.monotonic()
         dt, self._last = min(0.1, now - self._last), now
-        self.dog.set_pose("happy" if now < self._happy_until else "sit")
+        frame = self.pipeline.frame() if self.pipeline is not None else None
+        if frame is not None and frame.speaking:
+            self.dog.set_pose("talk")
+            self.dog.mouth = frame.mouth
+        else:
+            self.dog.set_pose("happy" if now < self._happy_until else "sit")
+        level, tone = (frame.level, frame.tone) if frame is not None and frame.speaking else (0.0, 0.5)
+        self.orb.level += (level - self.orb.level) * 0.35
+        self.orb.tone += (tone - self.orb.tone) * 0.05  # 높낮이 느낌은 천천히 따라간다
         self.dog.tick(dt)
         self.orb.tick(dt, QCursor.pos())
+
+    def _on_state(self, state: str) -> None:
+        self.orb.set_state(state)
+        engine = getattr(self.pipeline, "os_engine", None)
+        factors = dict(getattr(engine, "x5_factors", None) or {})
+        if state == "idle" and factors and factors != self.settings["x5_factor"]:
+            self.settings.set(x5_factor=factors)  # 음성마다 처음 한 번 잰 x5 배속을 기억한다
+
+    # ------------------------------------------------------------ 대본 소리 미리 만들기
+
+    def start_presynth(self) -> None:
+        if self.presynth is None:
+            return
+        plan = cloud_engine(self.settings.data)
+        deck = self.session.deck
+        if plan is None or deck is None:
+            self.presynth.stop()
+            self.presynth_state = ("off", 0, 0, "")
+            return
+        slides = [sentence_plan(to_speech(self.session.script_for(i))) for i in range(len(deck.slides))]
+        self.presynth.start(plan[0], plan[1], slides, max(self.session.current, 0))
+
+    def _on_script(self, index: int) -> None:
+        if index < 0 or self.presynth is None or cloud_engine(self.settings.data) is None:
+            self.start_presynth()
+        else:
+            self.presynth.redo(index, sentence_plan(to_speech(self.session.script_for(index))))
+
+    def presynth_progress(self, done: int, total: int) -> None:
+        self.presynth_state = ("done" if done >= total else "making", done, total, "")
+
+    def presynth_failed(self, kind: str, detail: str) -> None:
+        _, done, total, _ = self.presynth_state
+        self.presynth_state = ("failed", done, total, detail or kind)
 
     def _on_pose(self, pose: str) -> None:
         if pose == "happy":
@@ -140,8 +144,12 @@ class Controller(QObject):
             self.quit()
 
     def quit(self) -> None:
-        """[끝내기]: 읽기 정지 → 연동 닫기 → 설정 저장 → 종료."""
+        """[끝내기]: 읽기 정지 → 미리 만들기 취소 → 연동 닫기 → 설정 저장 → 종료."""
         self._timer.stop()
+        if self.pipeline is not None:
+            self.pipeline.stop()
+        if self.presynth is not None:
+            self.presynth.close()
         self.session.shutdown()
         for close in self.closers:
             close()
@@ -162,33 +170,36 @@ def _make_app() -> QApplication:
 
 def run(path: str | None = None) -> int:
     from ..link import PowerPointLink
-    from ..tts import Speaker, TTSUnavailable
+    from ..voice.cache import Presynth, VoiceCache
+    from ..voice.engines import EngineUnavailable, make_engine
+    from ..voice.pipeline import Pipeline, VoiceThread
+    from ..voice.player import Player
 
     app = _make_app()
     invoker = MainThreadInvoker()
     settings = Settings()
-    holder: dict[str, Session] = {}
-
-    def on_voice(kind, tag, info):
-        if kind == "done":
-            holder["session"].voice_done(tag, bool(info))
-        elif kind == "error":
-            holder["session"].voice_error(tag, str(info))
-
+    cache = VoiceCache(settings.folder)
     closers: list[Callable[[], None]] = []
+    pipeline = None
     try:
-        speaker = Speaker(invoker.wrap(on_voice))
-        closers.append(speaker.close)
-    except TTSUnavailable as e:
-        speaker = None
+        os_engine = make_engine(dict(settings["x5_factor"]))
+        pipeline = Pipeline(os_engine, Player(), VoiceThread(invoker.post), lambda: cloud_engine(settings.data), cache)
+        closers.append(pipeline.close)
+    except EngineUnavailable as e:
         QMessageBox.critical(None, APP_TITLE, str(e))
 
     def link_factory(on_change, on_error):
         return PowerPointLink(invoker.wrap(on_change), invoker.wrap(on_error))
 
-    session = Session(settings, speaker, QtClock(), link_factory)
-    holder["session"] = session
-    controller = Controller(settings, session, closers)
+    session = Session(settings, pipeline, QtClock(), link_factory)
+    if pipeline is not None:
+        pipeline.on_done = session.voice_done
+        pipeline.on_error = session.voice_error
+        pipeline.on_cloud_failed = session.cloud_voice_failed
+        pipeline.on_voice_chosen = session.cloud_voice_chosen
+    controller = Controller(settings, session, pipeline, None, closers)
+    controller.presynth = Presynth(cache, invoker.wrap(controller.presynth_progress),
+                                   invoker.wrap(controller.presynth_failed))
     controller.start()
     if path:
         session.open_file(path)
@@ -253,7 +264,23 @@ def self_check(out) -> int:
     else:
         report(True, "macOS 보조", "해당 없음")
 
+    # 6. 재생 준비: 소리는 내지 않고, FFmpeg 백엔드가 올라와 음높이를 지키며 늘일 수 있는지만 본다
+    report(*_check_playback())
+
     return 0 if all(results) else 1
+
+
+def _check_playback() -> tuple[bool, str, str]:
+    try:
+        from PySide6.QtMultimedia import QMediaDevices, QMediaPlayer
+
+        player = QMediaPlayer()
+        availability = player.pitchCompensationAvailability()
+        ok = availability != QMediaPlayer.PitchCompensationAvailability.Unavailable
+        outputs = len(QMediaDevices.audioOutputs())
+        return ok, "재생 준비", f"음높이 유지 {availability.name}, 출력 장치 {outputs}개"
+    except Exception as e:
+        return False, "재생 준비", f"{type(e).__name__}: {e}"
 
 
 def _check_synth() -> tuple[bool, str, str]:

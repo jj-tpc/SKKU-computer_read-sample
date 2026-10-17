@@ -1,6 +1,6 @@
-"""문장 하나를 소리 데이터로 만드는 경계. 운영체제 음성(Windows SAPI, macOS say)을 쓴다.
+"""문장 하나를 소리 데이터로 만드는 경계와 운영체제 음성(Windows SAPI, macOS say).
 
-나중에 클라우드 음성을 끼울 수 있게 밖에서는 Engine의 voices()와 synth()만 쓴다.
+클라우드 음성(cloud.py)도 같은 Engine을 따르므로 밖에서는 voices()와 synth()만 쓴다.
 synth()는 음성 스레드에서만 부른다. SAPI COM 객체는 만든 스레드에서만 쓸 수 있다.
 """
 from __future__ import annotations
@@ -16,7 +16,9 @@ import tempfile
 import wave
 from dataclasses import dataclass, field
 
-RATE = 22050  # Hz. 16bit mono
+from .signal import word_spans
+
+RATE = 22050  # 운영체제 음성과 ElevenLabs의 표본 빈도(Hz). 16bit mono
 BYTES_PER_SEC = RATE * 2
 X5 = 5.0
 # x5에서 음성이 실제로 낸 배속을 잴 때 쓰는 짧은 문장
@@ -40,20 +42,23 @@ class Voice:
 
 @dataclass
 class Synth:
-    pcm: bytes  # 22050Hz, 16bit, mono
+    pcm: bytes  # 16bit, mono
     words: list[tuple[int, int, float]] = field(default_factory=list)  # (글자 시작 위치, 글자 수, 시작 초)
     engine_speed: float = 1.0  # 엔진이 실제로 낸 배속(늘이기 전)
+    rate: int = RATE  # 표본 빈도(Hz). Gemini는 24000
 
     @property
     def seconds(self) -> float:
-        return len(self.pcm) / BYTES_PER_SEC
+        return len(self.pcm) / (self.rate * 2)
 
 
 class Engine:
     def voices(self) -> list[Voice]:
         raise NotImplementedError
 
-    def synth(self, text: str, voice_id: str | None, speed: float) -> Synth:
+    def synth(self, text: str, voice_id: str | None, speed: float,
+              prev_text: str = "", next_text: str = "") -> Synth:
+        """prev_text, next_text는 앞뒤 문장이다. 쓰는 엔진(ElevenLabs)만 쓴다."""
         raise NotImplementedError
 
     def close(self) -> None:
@@ -62,7 +67,7 @@ class Engine:
 
 def estimate_words(text: str, seconds: float) -> list[tuple[int, int, float]]:
     """낱말 시각을 주지 않는 엔진용. 소리 길이를 낱말 글자 수(공백 빼고)에 비례해 나눈다."""
-    spans = [(m.start(), m.end() - m.start()) for m in re.finditer(r"\S+", text)]
+    spans = word_spans(text)
     total = sum(n for _, n in spans)
     out, done = [], 0
     for start, n in spans:
@@ -187,7 +192,8 @@ class SapiEngine(Engine):
             self.x5_factors[key] = round(a / b, 3) if a > 0 and b > 0 else 1.0
         return self.x5_factors[key]
 
-    def synth(self, text: str, voice_id: str | None, speed: float) -> Synth:
+    def synth(self, text: str, voice_id: str | None, speed: float,
+              prev_text: str = "", next_text: str = "") -> Synth:
         if speed >= X5:
             factor = self.x5_factor(voice_id)
             pcm, words = self._render(text, voice_id, 10, 5)
@@ -232,7 +238,8 @@ class SayEngine(Engine):
                 found.append(Voice(name, name, m.group(2)))
         return found
 
-    def synth(self, text: str, voice_id: str | None, speed: float) -> Synth:
+    def synth(self, text: str, voice_id: str | None, speed: float,
+              prev_text: str = "", next_text: str = "") -> Synth:
         wpm = min(self.MAX_WPM, round(self.BASE_WPM * speed))
         fd, path = tempfile.mkstemp(suffix=".wav")
         os.close(fd)

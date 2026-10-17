@@ -39,9 +39,27 @@ def test_keys_are_kept_per_provider(app_home):
     s.set_for("keys", "openai", "openai-key")
     s.set_for("key_ok", "openai", True)
     again = Settings()
-    assert again["keys"] == {"claude": "claude-key", "openai": "openai-key", "gemini": ""}
-    assert again["key_ok"] == {"claude": False, "openai": True, "gemini": False}
+    assert again["keys"] == {"claude": "claude-key", "openai": "openai-key", "gemini": "", "elevenlabs": ""}
+    assert again["key_ok"] == {"claude": False, "openai": True, "gemini": False, "elevenlabs": False}
     assert again["models"]["claude"] == "claude-haiku-5-5"
+
+
+def test_voice_engine_settings(app_home):
+    s = Settings()
+    assert s["voice_engine"] == "os"
+    assert s["cloud_voice"]["elevenlabs"]["model"] == "eleven_multilingual_v2"
+    assert s["cloud_voice"]["gemini"] == {"model": "gemini-3.8-flash-tts", "voice": "Kore"}
+    s.set(voice_engine="openai")  # 없는 엔진은 받지 않는다
+    assert Settings()["voice_engine"] == "os"
+    s.set(voice_engine="elevenlabs", cloud_voice={"elevenlabs": {"voice_id": "abc", "voice_name": "Anna", "model": ""},
+                                                  "gemini": {"voice": ""}})
+    again = Settings()
+    assert again["voice_engine"] == "elevenlabs"
+    assert again["cloud_voice"]["elevenlabs"] == {"model": "eleven_multilingual_v2", "voice_id": "abc", "voice_name": "Anna"}
+    assert again["cloud_voice"]["gemini"]["voice"] == "Kore"  # 빈 값은 기본값으로
+    s.set_for("keys", "elevenlabs", "el-key")
+    s.set_for("keys", "gemini", "gm-key")  # Gemini 음성과 Gemini 질의응답은 키 하나
+    assert Settings()["keys"]["elevenlabs"] == "el-key" and Settings()["keys"]["gemini"] == "gm-key"
 
 
 def test_thinking_depth_is_not_saved(app_home):
