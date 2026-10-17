@@ -150,6 +150,8 @@ def run(app_path: str, out_dir: str) -> int:
         cliclick("kp:esc")
         time.sleep(1)
         shot(out, "06_question_closed")
+        closed_front = frontmost()
+        note(f"{'OK  ' if closed_front == show_front else 'WARN'} 질문창을 닫은 뒤 맨 앞 앱: {closed_front}")
     finally:
         app.terminate()
         show.terminate()

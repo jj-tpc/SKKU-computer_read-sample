@@ -207,6 +207,7 @@ class Controller(QObject):
     def open_question(self) -> None:
         if not self.question.isVisible():
             self._question_from = platform_win.foreground_window()  # 닫을 때 쇼에 포커스를 돌려준다
+            self._question_from_mac = platform_mac.front_app()
         self.question.place(self.orb.orb_center_global())
         self.orb.question_open = True
         self.question.open()
@@ -217,6 +218,7 @@ class Controller(QObject):
     def _question_closed(self) -> None:
         self.orb.question_open = False
         platform_win.restore_foreground(getattr(self, "_question_from", 0))
+        platform_mac.restore_front(getattr(self, "_question_from_mac", None))
 
     def _on_question(self, text: str) -> None:
         self.question.set_text(text)  # ""면 비우고(답을 다 함), 글이면 다시 채운다(오류)

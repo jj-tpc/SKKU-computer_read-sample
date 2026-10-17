@@ -8,7 +8,7 @@ import math
 import random
 from typing import Callable
 
-from PySide6.QtCore import QPoint, QPointF, QRect, QRectF, Qt
+from PySide6.QtCore import QEvent, QPoint, QPointF, QRect, QRectF, Qt
 from PySide6.QtGui import (QColor, QFont, QFontMetrics, QLinearGradient, QPainter, QPainterPath, QPen, QPolygonF,
                            QRadialGradient, QRegion)
 from PySide6.QtWidgets import QLineEdit, QToolTip, QWidget
@@ -425,6 +425,8 @@ class QuestionWindow(QWidget):
                          | Qt.WindowType.Tool)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_MacAlwaysShowToolWindow)
+        # 띄울 때 앱을 활성화하지 않는다(macOS에서 전체 화면 쇼가 활성 앱으로 남아야 한다). 키 입력은 open()에서 준다
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         self.on_send = on_send
         self.on_close = on_close
         self.effort = "low"
@@ -442,6 +444,8 @@ class QuestionWindow(QWidget):
         bar = self._bar()
         self.edit.setGeometry(int(bar.x() + 20), int(bar.y() + 8), int(bar.width() - 20 - SEND_D - 14), int(bar.height() - 16))
         self.edit.returnPressed.connect(self.send)
+        # 입력 칸이 Esc를 먹어도 닫히게, 입력 칸보다 먼저 받는다(창이 활성이 아니어도 된다)
+        self.edit.installEventFilter(self)
         self._pill_font = QFont(theme.FONT_FAMILY)
         self._pill_font.setPixelSize(13)
         self._pill_font.setBold(True)
@@ -499,11 +503,11 @@ class QuestionWindow(QWidget):
 
     # ------------------------------------------------------------ 입력
 
-    def keyPressEvent(self, event):
-        if event.key() == Qt.Key.Key_Escape:
+    def eventFilter(self, obj, event):
+        if obj is self.edit and event.type() == QEvent.Type.KeyPress and event.key() == Qt.Key.Key_Escape:
             self.close_box()
-            return
-        super().keyPressEvent(event)
+            return True
+        return super().eventFilter(obj, event)
 
     def mousePressEvent(self, event):
         pos = event.position()

@@ -78,6 +78,31 @@ def make_key(widget) -> bool:
         return False
 
 
+def front_app():
+    """질문창을 열기 전에 맨 앞에 있던 앱(보통 PowerPoint). 닫을 때 다시 앞으로 돌린다."""
+    if not _cocoa():
+        return None
+    try:
+        from AppKit import NSWorkspace
+
+        return NSWorkspace.sharedWorkspace().frontmostApplication()
+    except Exception:
+        return None
+
+
+def restore_front(app) -> None:
+    """질문창을 열며 이 앱이 활성화됐으면, 앞서 맨 앞에 있던 앱을 다시 활성화해 쇼가 키 입력을 받게 한다."""
+    if app is None or not _cocoa():
+        return
+    try:
+        from AppKit import NSRunningApplication
+
+        if NSRunningApplication.currentApplication().isActive():
+            app.activateWithOptions_(0)
+    except Exception:
+        pass
+
+
 def check(widget) -> tuple[bool, str]:
     """--self-check용: 보조가 실제 NSWindow에 적용됐는지 읽어서 확인한다."""
     if sys.platform != "darwin":
