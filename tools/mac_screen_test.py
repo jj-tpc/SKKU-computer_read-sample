@@ -20,6 +20,7 @@ ROOT = Path(__file__).resolve().parent.parent
 SHOW_RGB = (28, 112, 168)  # 가짜 쇼 바탕색
 CORAL_RGB = (255, 111, 97)
 SHIBA_RGB = (233, 161, 79)
+ESC_TRIES = 5  # cliclick의 Esc는 세 번째에 닿은 적도, 세 번 모두 안 닿은 적도 있다(앱은 같은 판)
 
 
 def fake_show() -> None:
@@ -182,7 +183,7 @@ def run(app_path: str, out_dir: str) -> int:
         note(f"INFO 질문창에 글을 치는 동안 맨 앞 앱: {typed_front}")
         # cliclick의 Esc가 앱에 닿지 않을 때가 있다(앱 로그에 Esc 줄이 없음). 그때만 다시 누른다
         closed_ok = False
-        for attempt in range(1, 4):
+        for attempt in range(1, ESC_TRIES + 1):
             seen = esc_lines(out)
             cliclick("kp:esc")
             time.sleep(1)

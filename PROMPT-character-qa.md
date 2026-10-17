@@ -980,7 +980,7 @@ class Provider:
 20. OpenAI 음성 합성 모델은 2027-01-06에 종료되고, GPT-Live는 대화 전용이다. OpenAI 음성은 넣지 않는다.
 21. macOS에서 원 버튼 창은 활성화하지 않는 패널인데도, 두 번째로 누를 때 이 앱이 활성이 될 때가 있다(빌드 서버에서 확인). 창을 여는 버튼이 아니면 누른 뒤 이 앱이 활성인지 보고, 마지막으로 본 다른 앱(쇼)에 활성을 돌려준다.
 22. macOS 투명 창의 시스템 그림자는 옛 모양으로 남아 강아지 뒤에 유령 그림자가 생긴다. 그림자는 직접 그리고 `NoDropShadowWindowHint`로 시스템 그림자를 끈다.
-23. macOS 빌드 서버에서 cliclick의 Esc가 앱에 닿지 않을 때가 있다(글자 입력은 닿는다). 질문창의 Esc는 NSEvent local monitor로도 받고, 화면 시험은 앱 로그에 Esc 줄이 없을 때만 다시 누른다.
+23. macOS 빌드 서버에서 cliclick의 Esc가 앱에 닿지 않을 때가 있다(글자 입력은 닿는다). 질문창의 Esc는 NSEvent local monitor로도 받고, 화면 시험은 앱 로그에 Esc 줄이 없을 때만 다시 누른다(최대 5번. 3번 모두 안 닿은 적이 있다).
 </known_pitfalls>
 
 <workflow>
