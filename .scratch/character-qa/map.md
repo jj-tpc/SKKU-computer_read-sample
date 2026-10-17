@@ -6,6 +6,8 @@
 
 **도착(2026-10-17)**: 일 20개를 모두 정했고, 기획서를 저장소 루트의 `PROMPT-character-qa.md`로 썼다. 이 문서가 `[보충]`으로 표시한 10곳은 기획 기록에 없던 세부를 채운 것이라 발표자가 훑어본다.
 
+**다시 엶(2026-10-17)**: 1단계 구현 뒤 발표자가 클라우드 음성(ElevenLabs, OpenAI)을 요청해 범위 밖에서 범위 안으로 옮겼다. 일 21, 22를 정해 기획서에 반영했고, 2단계(음성 흐름)에서 함께 만든다.
+
 ## Notes
 
 - 분야: Python 데스크톱 앱, Windows 10/11 + macOS 둘 다, 화면 문구는 한국어. 기존 구조는 `README.md`의 "구조" 절과 `PROMPT.md`를 본다.
@@ -38,6 +40,8 @@
 - [실행 파일 빌드와 넘기기 정하기](issues/17-grilling-build-and-handoff.md) — PySide6 6.11.x와 Python 3.14로 고정하고, 받는 Mac은 macOS 15 이상이다. 저장소를 공개로 바꿔 GitHub Actions 무료 러너에서 Windows판과 macOS판을 손으로 눌러 빌드한다. 빌드 서버에서 `--self-check`, 서명·arm64 검사, 전체 화면 위 화면 찍기를 한다. zip 꾸러미에 안내문과 받는 사람 확인표, `licenses/`를 넣는다.
 - [시험 방법 정하기](issues/19-grilling-test-plan.md) — 화면·인터넷·소리 없이 도는 pytest로 `qa`, `llm`, `voice`, `captions`, `settings`, 따라가기 계산, 오류 시계를 덮는다. 상태 묶음은 Qt를 모르는 `session.py`로 빼서 기존 화면 테스트를 옮기고, Qt는 pytest-qt로 몇 개만 본다. 실제 LLM 시험은 키가 있을 때만 돌고, 사람이 확인할 목록은 기획서 부록에 둔다.
 - [기획서의 위치와 목차 정하기](issues/20-grilling-spec-outline.md) — 루트의 `PROMPT-character-qa.md` 한 파일에 `PROMPT.md` 형식의 확장 프롬프트로 쓴다(`PROMPT.md`는 고치지 않음). 조사 문서는 `docs/research/`로 옮기고 시제품은 브랜치@커밋으로 가리킨다. `.scratch/`와 `CONTEXT.md`도 함께 커밋한다. 구현은 macOS 빌드 길을 먼저 뚫는 뼈대부터 여섯 단계로 간다.
+- [클라우드 음성 API 조사](issues/22-research-cloud-tts.md) — "gpt-live"는 대화 전용 GPT-Live였고, OpenAI 음성 합성 모델은 2027-01-06에 종료된다. ElevenLabs는 22050Hz PCM과 글자 시각을 줘서 지금 구조에 맞고, Gemini TTS는 한국어와 무료 등급이 있으나 시각·속도가 없다.
+- [클라우드 음성을 목소리 엔진으로 넣기](issues/21-grilling-cloud-voice.md) — 운영체제 음성, ElevenLabs, Gemini 중 하나를 골라 대본과 답에 함께 쓴다. x1로 한 번 합성해 `voice_cache/`에 저장하고 배속은 재생 때 늘이며, 파일을 열면 대본을 미리 합성한다. 실패하면 운영체제 음성으로 이어 읽는다. Gemini 키는 질의응답과 함께 쓴다.
 
 ## Not yet specified
 
@@ -46,7 +50,7 @@
 ## Out of scope
 
 - 마이크로 질문 받기 — 질문은 발표자가 키보드로 입력하기로 했다.
-- 클라우드 음성 합성(API TTS) — 나중에 별도 작업으로 한다. 이번에는 음성 엔진을 나중에 끼워 넣을 수 있게만 설계한다.
+- OpenAI 음성(GPT-Live, Realtime 모델, `gpt-4o-mini-tts`) — GPT-Live는 대화 전용이고, 음성 합성 모델은 2027-01-06에 종료되며, 대체 Realtime 모델은 대본을 그대로 읽는다는 보장이 없다. Gemini 음성으로 대신했다([클라우드 음성을 목소리 엔진으로 넣기](issues/21-grilling-cloud-voice.md)).
 - 질의응답 자동 시작, 발표 중간 질문 — 발표자가 버튼으로 시작하는 것으로 충분하다고 했다.
 - 기능별로 다른 LLM 쓰기, 실패 시 다른 제공자로 자동 전환 — 설정에서 하나를 골라 모두에 쓴다.
 - 키를 숨기는 학교 서버, 운영체제 보관함(키체인) 저장 — 키는 설정 파일에 저장한다.

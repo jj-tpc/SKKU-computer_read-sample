@@ -34,7 +34,7 @@ PySide6(Qt), Windows COM과 SAPI, macOS AppleScript와 pyobjc, Anthropic·OpenAI
 - 화면 위 **캐릭터**(붉은 목띠를 맨 도트 강아지)가 마우스 커서를 따라다니며 슬라이드의 **대본**을 읽는다.
 - 발표가 끝나면 **청중**이 질문하고, 발표자가 그 질문을 키보드로 대신 입력한다. 캐릭터는 발표 자료를 먼저 근거로 삼고 일반 지식으로 보충해 말풍선과 목소리로 답한다.
 - 사용자는 한국어 사용자(학생, 교사)다.
-- 사용하는 PC는 인터넷에 연결되어 있다. 대본 읽기는 운영체제 음성이라 인터넷이 없어도 된다.
+- 사용하는 PC는 인터넷에 연결되어 있다. 대본 읽기는 운영체제 음성이면 인터넷이 없어도 된다. 클라우드 음성(ElevenLabs, Gemini)을 고르면 대본 소리를 미리 합성해 두므로, 다 만든 뒤에는 인터넷이 끊겨도 대본을 읽는다.
 </scenario>
 <platforms>
 - Windows 10/11과 macOS 15(Sequoia) 이상의 Apple Silicon Mac에서 같은 소스로 동작해야 한다. Intel Mac과 Linux는 대상이 아니다.
@@ -42,7 +42,8 @@ PySide6(Qt), Windows COM과 SAPI, macOS AppleScript와 pyobjc, Anthropic·OpenAI
 </platforms>
 <why_these_choices>
 - **툴킷은 PySide6(Qt)**: Mac 없이 macOS판을 넘겨야 한다. Qt는 반투명 창, 그리기, 한글 입력을 두 운영체제에서 같은 방식으로 해서, 확인하지 못하는 macOS 전용 코드가 가장 적다. tkinter는 버린다. 근거: 09, `docs/research/gui-toolkit.md`.
-- **음성은 운영체제 음성을 미리 합성하고 Qt로 재생**: 파동과 강아지 입이 목소리 크기를 진짜로 따라가야 하고, 말풍선 글이 낱말 단위로 목소리를 따라 나와야 한다. 근거: 10, `docs/research/tts-signal-speed.md`, `docs/research/qt-audio-tts.md`.
+- **음성은 문장마다 미리 합성하고 Qt로 재생**: 파동과 강아지 입이 목소리 크기를 진짜로 따라가야 하고, 말풍선 글이 낱말 단위로 목소리를 따라 나와야 한다. 근거: 10, `docs/research/tts-signal-speed.md`, `docs/research/qt-audio-tts.md`.
+- **목소리 엔진은 운영체제 음성, ElevenLabs, Gemini 중 하나**: 발표자가 클라우드 음성을 원했다. ElevenLabs는 22050Hz PCM과 글자 시각을 줘서 지금 구조에 그대로 맞는다. OpenAI는 뺐다. 발표자가 말한 GPT-Live는 대화 전용이고, 음성 합성 모델은 2027-01-06에 종료되기 때문이다. 근거: 21, 22, `docs/research/cloud-tts.md`.
 - **LLM은 세 공식 SDK**: Claude, OpenAI, Gemini 중 설정에서 하나를 골라 질의응답과 캡션에 함께 쓴다. 근거: 03, 12, `docs/research/llm-providers.md`.
 - **디자인 중심 컨셉은 오션·코랄**: 원 버튼, 위성 버튼, 말풍선은 코랄이고 바탕과 그림자는 바다색이다. 근거: 07, 15.
 </why_these_choices>
@@ -77,6 +78,7 @@ PySide6(Qt), Windows COM과 SAPI, macOS AppleScript와 pyobjc, Anthropic·OpenAI
   - Pillow는 python-pptx를 따라 들어온다.
   - 개발용 `requirements-dev.txt`는 `-r requirements.txt`, `pytest`, `pytest-qt`, `pyinstaller`다.
   - numpy, sounddevice, pyttsx3, PyQt, tkinter 화면은 쓰지 않는다.
+  - ElevenLabs는 SDK 없이 표준 라이브러리 `urllib.request`로 부른다. 요청이 POST 하나와 JSON 응답뿐이라서 새 의존성을 들이지 않는다. Gemini 음성은 이미 있는 `google-genai`로 부른다.
 - **PySide6는 6.11.x에 고정**한다. 이유는 넷이다.
   - 음높이 유지 배속(`QMediaPlayer.pitchCompensation`)이 6.10 이상에만 있다.
   - Python 3.14에서는 6.10.1 이상만 깔린다.
@@ -95,7 +97,8 @@ PySide6(Qt), Windows COM과 SAPI, macOS AppleScript와 pyobjc, Anthropic·OpenAI
 <non_goals>
 다음은 만들지 않는다. 사용자가 요청하면 그때 추가한다.
 - 마이크로 질문 받기(질문은 발표자가 키보드로 입력한다)
-- 클라우드 음성 합성. 다만 음성 엔진을 나중에 끼워 넣을 수 있게 `voice/engines.py`의 경계를 둔다.
+- OpenAI 음성(GPT-Live, Realtime 모델, `gpt-4o-mini-tts`)과 ElevenLabs·Gemini 밖의 클라우드 음성. 엔진 경계(`voice/engines.py`의 `Engine`)는 두므로 나중에 더할 수 있다.
+- 질의응답 답의 소리 저장(답은 그때그때 합성한다)
 - 질의응답 자동 시작, 발표 중간 질문
 - 기능별로 다른 LLM 쓰기, 실패 시 다른 제공자로 자동 전환
 - 키를 숨기는 서버, 운영체제 키체인 저장
@@ -131,10 +134,12 @@ ppt_reader/
   follow.py                 강아지 따라가기 계산 (순수 함수)
   voice/
     __init__.py
-    engines.py              SAPI 메모리 합성(Windows), say -o(macOS) → 소리 데이터와 낱말 시각
+    engines.py              엔진 경계. SAPI 메모리 합성(Windows), say -o(macOS) → 소리 데이터와 낱말 시각
+    cloud.py                클라우드 음성 엔진: ElevenLabs(HTTP), Gemini(google-genai), 오류 다섯 종류
+    cache.py                대본 소리 저장(voice_cache/)과 미리 합성 작업
     signal.py               크기 곡선, 입 모양 판정, 음절 시각 어림
     player.py               Qt 재생(QAudioSink / QMediaPlayer), 장치, 늘이기, 블루투스 무음
-    pipeline.py             문장 줄: 앞 문장 재생 중 다음 문장 합성, 재생 위치 알림
+    pipeline.py             문장 줄: 앞 문장 재생 중 다음 문장 합성, 클라우드 실패 시 운영체제 음성, 재생 위치 알림
   llm/
     __init__.py
     base.py                 공통 경계: 요청, 글 조각 흐름, 다섯 공통 오류, 모델 목록
@@ -334,7 +339,7 @@ tests/                      <tests>
   - 코랄 그라데이션 진행 막대(폭 320px, 높이 8px)를 둔다.
   - 끝났다고 보는 조건:
     - 발표 자료: 파일이 열려 있다.
-    - 목소리: 늘 끝남.
+    - 목소리: 운영체제 음성이면 늘 끝남. 클라우드 음성이면 그 제공자의 키 확인이 맞았다.
     - 질의응답: 키 확인이 맞았다.
     - 캐릭터와 화면: 늘 끝남.
 - **접히는 카드 네 장**: 머리를 누르면 펼치고 접는다.
@@ -345,16 +350,30 @@ tests/                      <tests>
   | 카드 | 들어 있는 것 |
   |---|---|
   | 1. 발표 자료 | 파일 이름과 `슬라이드 {N}장 · 노트 있는 장 {k}개 · 고친 대본 {m}장`, [다른 파일…], [📝 대본 열기], PowerPoint 연동 스위치와 상태 칩, 읽을 내용(기존 SOURCES 네 가지). 파일이 없으면 [파일 열기…], 안내, 연동 스위치만 보인다 |
-  | 2. 목소리 | 목소리(한국어 음성 먼저)와 [들어 보기], 출력 장치(목록을 펼 때마다 다시 찾기, 기존 규칙), 자동 발표 스위치, 쇼에서 바로 읽기 스위치, 배속 안내 |
+  | 2. 목소리 | 맨 위에 목소리 엔진 단추 묶음(운영체제 음성 / ElevenLabs / Gemini). 그 아래는 엔진에 따라 바뀐다(아래 목록). 그다음 출력 장치(목록을 펼 때마다 다시 찾기, 기존 규칙), 자동 발표 스위치, 쇼에서 바로 읽기 스위치, 배속 안내 |
   | 3. 질의응답 | AI 제공자(Claude / OpenAI / Gemini 단추 묶음), 모델(목록 + `직접 입력…`), API 키(가린 칸, [보기]/[숨기기], [확인], 결과 글), 개인 지침(여러 줄), 캡션 스위치(기본 꺼짐) |
   | 4. 캐릭터와 화면 | 강아지 카드 세 장(앉기 애니메이션, 이름, 설명, 시바에 `· 기본`), 강아지 보이기 스위치, 원 버튼 모니터(`쇼가 뜬 모니터 따라가기` + 연결된 모니터마다 `{번호}번 — {이름} ({가로}×{세로})`) |
 
+- **목소리 카드의 엔진별 칸**:
+  - 운영체제 음성: 목소리(한국어 음성 먼저)와 [들어 보기]
+  - ElevenLabs:
+    - 목소리 목록(계정에서 `GET /v2/voices`로 불러옴, 처음에는 첫 목소리), [들어 보기]
+    - 모델(`eleven_multilingual_v2` 기본, `eleven_flash_v2_5`, `eleven_v4`)
+    - API 키(가린 칸, [보기]/[숨기기], [확인], 결과 글)
+    - 무료 등급 안내 한 줄
+    - 대본 소리 미리 만들기 진행
+  - Gemini:
+    - 목소리 목록(`Kore` 기본, 미리 만든 목소리 30개), [들어 보기]
+    - 모델(`gemini-3.8-flash-tts` 기본, `gemini-3.8-flash-lite-tts`)
+    - API 키 칸: 질의응답 카드의 Gemini 키와 같은 값이고, 한쪽에서 고치면 다른 쪽도 바뀐다
+    - 대본 소리 미리 만들기 진행
+  - 클라우드 엔진을 골랐는데 키 확인이 맞지 않았으면 운영체제 음성으로 읽는다는 안내를 보인다.
 - **맨 아래**: `바꾸면 바로 저장돼요` 글과 `오픈 소스 라이선스` 링크(`licenses/` 폴더를 연다)를 둔다.
 - **스위치**: 켜지면 코랄 그라데이션, 꺼지면 `#CFDCE2`인 42×24px 둥근 스위치다.
 - **주요 단추**: 코랄 그라데이션에 흰 굵은 글자다.
 - **제공자를 바꾸면**: 그 제공자의 기본 모델을 고르고, 그 제공자의 저장된 키를 보인다. 키는 제공자마다 따로 저장한다 `[보충]`.
-- **키 확인**: 그 제공자의 모델 목록 API를 한 번 부른다. 성공하면 맞음, 키 문제 오류면 틀림, 그 밖의 오류면 알림 글을 보인다.
-- 근거: 15, 시제품 `prototype/settings@0660347`(B안).
+- **키 확인**: 그 제공자의 모델 목록 API를 한 번 부른다. ElevenLabs는 `GET /v2/voices?page_size=1`이다(목소리 읽기 권한까지 확인됨). 성공하면 맞음, 키 문제 오류면 틀림, 그 밖의 오류면 알림 글을 보인다.
+- 근거: 15, 21, 시제품 `prototype/settings@0660347`(B안).
 </screen>
 
 <screen name="대본 창">
@@ -396,13 +415,26 @@ tests/                      <tests>
   - 고친 대본 쓰기
   - 화면 쪽 호출(Listbox, Text 등)은 session의 신호로 바꾼다.
 - 소리는 <module name="voice/pipeline.py">로 낸다. 한 장의 대본은 문장으로 잘라 합성하고 이어서 재생한다.
+- **클라우드 음성일 때**:
+  - 미리 만든 소리가 저장되어 있으면 그것을 쓰고, 없으면 그 자리에서 합성한다(<module name="voice/cache.py">).
+  - 합성이 실패하면 그 문장부터 운영체제 음성으로 이어 읽고 알림 줄을 띄운다. 언제 클라우드를 다시 시도하는지는 <module name="voice/pipeline.py">에 있다.
 - 읽는 동안 원 버튼은 "읽는 중" 파동, 강아지는 말하기 입을 한다. 말풍선은 띄우지 않는다.
 - [읽기/정지] 위성 버튼:
   - 말하는 중(대본이든 답이든)이면 멈춘다.
   - 아니면 지금 장을 읽는다. 지금 장은 연동 중이면 쇼의 장, 아니면 대본 창에서 고른 장, 그것도 없으면 첫 장이다.
 - 자동 발표가 마지막 장까지 끝나면 강아지가 1.5초 기뻐한다.
 - 질의응답 중(생각 중, 답하는 중)에 쇼의 장이 바뀌면 지금 장만 맞추고 읽지 않는다 `[보충]`.
-- 근거: 10, 14, `PROMPT.md`.
+- 근거: 10, 14, 21, `PROMPT.md`.
+</flow>
+
+<flow name="대본 소리 미리 만들기">
+- 목소리 엔진이 클라우드 음성이고 그 키 확인이 맞았을 때만 한다.
+- **시작하는 때**: 파일을 열 때, 엔진·모델·목소리를 바꿀 때, 키 확인이 맞게 바뀔 때. 대본을 고치면 그 장만 다시 만든다.
+- **차례**: 미리 만들기 작업 스레드 하나가 지금 장부터 시작해 끝까지, 그다음 앞 장들을 처리한다. 장마다 대본을 읽을 때와 같은 방법으로 문장을 자르고, 저장되지 않은 문장만 합성한다.
+- **읽기와 겹칠 때**: 읽는 쪽이 먼저다. 읽을 문장이 아직 없으면 읽는 쪽이 그 문장을 직접 합성하고, 미리 만들기는 그 문장을 건너뛴다.
+- **진행 상황**: 설정 창 목소리 카드에 `대본 소리 만드는 중 {done} / {total}`(문장 수)로 보인다. 다 되면 `대본 소리 준비됨`이다.
+- **실패**: 목소리 카드에만 알린다. 발표 중에는 알리지 않는다. 키 문제·요금 한도면 멈추고, 인터넷 문제면 30초 뒤 다시 시도한다 `[보충]`.
+- 근거: 21.
 </flow>
 
 <flow name="질의응답">
@@ -444,7 +476,9 @@ tests/                      <tests>
   | 캡션 만들기 실패 | 대본 창의 캡션 진행 막대 |
   | 키 확인 실패 | 설정 창 키 칸 아래 글 |
   | PowerPoint 연동이 끊김 | 알림 줄 + 설정 창 연동 칩. 자동 발표를 멈춘다 |
-  | 음성 합성 실패 | 질의응답이면 말풍선 글만 보이고, 알림 줄을 띄운다 |
+  | 클라우드 음성 합성 실패 | 그 문장부터 운영체제 음성으로 이어 읽고, 알림 줄을 띄운다(<ui_strings>) |
+  | 대본 소리 미리 만들기 실패 | 설정 창 목소리 카드 |
+  | 운영체제 음성 합성 실패 | 질의응답이면 말풍선 글만 보이고, 알림 줄을 띄운다 |
 
 - 근거: 18.
 </flow>
@@ -452,7 +486,7 @@ tests/                      <tests>
 <flow name="끝내기">
 [끝내기]를 누르면 아래 순서로 정리하고 프로세스를 끝낸다.
 1. 읽기를 멈추고 합성 줄을 비운다.
-2. LLM 스트림과 캡션 작업을 취소한다.
+2. LLM 스트림, 캡션 작업, 대본 소리 미리 만들기를 취소한다.
 3. PowerPoint 연동을 닫는다.
 4. 고친 대본과 설정을 저장한다.
 5. 종료한다.
@@ -482,10 +516,15 @@ tests/                      <tests>
     "speed": 1.0,
     "auto_next": false,
     "read_on_change": true,
+    "voice_engine": "os",
+    "cloud_voice": {
+      "elevenlabs": {"model": "eleven_multilingual_v2", "voice_id": "", "voice_name": ""},
+      "gemini": {"model": "gemini-3.8-flash-tts", "voice": "Kore"}
+    },
     "provider": "claude",
     "models": {"claude": "claude-haiku-5-5", "openai": "gpt-6-luna", "gemini": "gemini-3.5-flash-lite"},
-    "keys": {"claude": "", "openai": "", "gemini": ""},
-    "key_ok": {"claude": false, "openai": false, "gemini": false},
+    "keys": {"claude": "", "openai": "", "gemini": "", "elevenlabs": ""},
+    "key_ok": {"claude": false, "openai": false, "gemini": false, "elevenlabs": false},
     "persona": "",
     "captions": false,
     "dog": "shiba",
@@ -495,6 +534,9 @@ tests/                      <tests>
   }
   ```
   - `speed`는 1.0, 1.5, 2.0, 5.0 중 하나다.
+  - `voice_engine`은 `"os"`, `"elevenlabs"`, `"gemini"` 중 하나다. `voice`는 운영체제 음성의 이름이다.
+  - `keys`와 `key_ok`는 회사마다 하나다. Gemini 음성과 Gemini 질의응답은 `keys.gemini`를 함께 쓴다.
+  - ElevenLabs `voice_id`가 비어 있으면 목소리 목록의 첫 목소리를 고르고 저장한다.
   - `monitor`는 `"follow"`이거나 모니터 이름이다.
   - `x5_factor`는 음성 id별로 잰 최고 배속이다(<module name="voice/engines.py">).
   - 생각 깊이는 저장하지 않는다.
@@ -509,7 +551,8 @@ tests/                      <tests>
   - 저장: 고칠 때마다 저장한다. 원래 대본으로 되돌리면 지운다.
   - 같은 파일을 열 때 장마다 지금 원래 대본의 sha256을 `orig`와 비교한다. 다르면 고친 대본은 그대로 쓰고 대본 창에 `원본이 바뀌었어요`를 보인다.
 - **캡션 `captions.json`**: `{그림 키: {"text": ..., "edited": bool, "model": ..., "made_at": ISO 시각}}`. 그림 키는 <module name="ppt_reader/captions.py">에 있다.
-- 근거: 16.
+- **대본 소리 `voice_cache/`**: <module name="ppt_reader/voice/cache.py">.
+- 근거: 16, 21.
 </module>
 
 <module name="ppt_reader/session.py">
@@ -528,17 +571,20 @@ Qt 화면을 모르는 상태 묶음이다. 기존 `app.py`의 `App` 로직(<app
 </module>
 
 <module name="ppt_reader/voice/engines.py">
-문장 하나를 소리 데이터로 만드는 경계다. 나중에 클라우드 음성을 끼울 수 있게 아래 인터페이스만 밖에 보인다.
+문장 하나를 소리 데이터로 만드는 경계다. 운영체제 음성과 클라우드 음성(<module name="ppt_reader/voice/cloud.py">)이 모두 아래 인터페이스만 밖에 보인다.
 ```python
 @dataclass
 class Synth:
-    pcm: bytes            # 22050Hz, 16bit, mono
+    pcm: bytes            # 16bit, mono
     words: list[tuple[int, int, float]]   # (글자 시작 위치, 글자 수, 소리 안 시작 초). 대본 글 기준
     engine_speed: float   # 엔진이 실제로 낸 배속(늘이기 전)
+    rate: int = 22050     # 표본 빈도(Hz). Gemini는 24000
 class Engine:
     def voices(self) -> list[Voice]: ...
-    def synth(self, text: str, voice_id: str | None, speed: float) -> Synth: ...   # 음성 스레드에서만
+    def synth(self, text: str, voice_id: str | None, speed: float,
+              prev_text: str = "", next_text: str = "") -> Synth: ...   # 음성 스레드에서만
 ```
+- `prev_text`, `next_text`는 앞뒤 문장이다. 쓰는 엔진(ElevenLabs)만 쓰고, 나머지는 무시한다.
 - **Windows SAPI**(pywin32, 음성 스레드에서 `CoInitialize`):
   1. `SAPI.SpMemoryStream`의 `Format.Type = 22`(SAFT22kHz16BitMono)로 둔다. `SpVoice.AudioOutputStream`을 그 스트림으로 바꾼다.
   2. Word 이벤트를 받으며 `Speak(text, SVSFlagsAsync | SVSFIsNotXML)`를 부르고 끝까지 기다린다. Word 이벤트의 `StreamPosition`(바이트)을 `÷ 44100`으로 초로 바꾸고, `CharacterPosition`과 `Length`를 함께 모은다.
@@ -555,6 +601,33 @@ class Engine:
   - say는 낱말 시각을 주지 않는다. 그래서 `words`는 문장 소리 길이를 낱말 글자 수(공백 빼고)에 비례해 나눈 어림값이다.
 - 문장 하나씩 합성한다. 긴 대본을 한 번에 합성하면 첫마디까지 늦어진다.
 - 근거: 10, `docs/research/tts-signal-speed.md`, `docs/research/qt-audio-tts.md`.
+</module>
+
+<module name="ppt_reader/voice/cloud.py">
+클라우드 음성 엔진 둘. `Engine`을 따르고, 음성 스레드(합성)와 미리 만들기 스레드에서 부른다. 한 요청은 8초 안에 끝나야 한다.
+- **늘 x1로 합성한다**: `speed`를 무시하고 `engine_speed = 1.0`을 돌려준다. x1.5·x2·x5는 재생할 때 늘인다(<module name="ppt_reader/voice/player.py">). 그래서 저장한 소리 하나로 네 배속을 모두 낸다.
+- **ElevenLabs**(`urllib.request`, 헤더 `xi-api-key`):
+  - 합성: `POST https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/with-timestamps?output_format=pcm_22050`. 본문은 `{"text", "model_id", "previous_text", "next_text"}`이다.
+  - 응답: `audio_base64`를 풀면 22050Hz S16LE 모노 PCM이다. `alignment.characters`와 `character_start_times_seconds`로 낱말 시각을 만든다(낱말 첫 글자의 시작 시각).
+  - `"".join(alignment.characters)`가 보낸 글과 다르면 글자 수 어림(`estimate_words`)으로 바꾼다. 모델에 따라 `alignment`가 없을 때도 같다.
+  - 목소리 목록: `GET /v2/voices?page_size=100`(다음 쪽은 `next_page_token`). 키 확인: `GET /v2/voices?page_size=1`.
+  - 오류: 401·403 → `key`, 402(`insufficient_credits`) → `quota`, 429(`rate_limit_exceeded`, `concurrent_limit_exceeded`, `system_busy`) → `network`(잠깐 막힌 것이라 다음에 다시 시도), 연결 실패 → `network`, 8초 초과 → `timeout`, 그 밖 → `other`. 본문의 `detail.code`(옛 `detail.status`도)를 본다.
+- **Gemini**(`google-genai`, 질의응답과 같은 키):
+  - 합성: 모델(`gemini-3.8-flash-tts` 기본)에 글과 `speech_config`의 목소리(`Kore` 기본)를 보낸다. 응답은 24kHz 16bit 모노 PCM이라 `rate = 24000`으로 돌려준다.
+  - 낱말 시각을 주지 않으므로 `estimate_words`로 어림한다.
+  - 모델은 지시를 따르는 생성 모델이라, 보낼 때 "다음 글을 덧붙이거나 빼지 말고 그대로 읽어라"라는 짧은 지시를 함께 넣는다 `[보충]`.
+  - 오류는 질의응답의 Gemini 어댑터와 같은 방식으로 다섯 종류로 바꾼다(<module name="ppt_reader/llm/base.py, claude.py, openai.py, gemini.py">).
+- **키**: 키는 로그, 오류 문구, 알림 줄에 찍지 않는다. 오류 첫 줄에서 키 모양 문자열을 지운다.
+- 근거: 21, 22, `docs/research/cloud-tts.md`.
+</module>
+
+<module name="ppt_reader/voice/cache.py">
+- **어디**: 앱 폴더 `voice_cache/`. 문장마다 `{키}.pcm`(소리)과 `{키}.json`(`rate`, `words`, `engine_speed`, 만든 시각)을 둔다.
+- **키**: `sha256(엔진 | 모델 | 목소리 | 앞 문장 | 문장 | 뒤 문장)`. 앞뒤 문장을 넣는 것은 ElevenLabs가 그것으로 억양을 잇기 때문이다. 대본 읽기와 미리 만들기가 같은 방법으로 문장을 자르므로 키가 맞는다.
+- **크기**: 모두 합해 500MB를 넘으면 오래 쓰지 않은 것부터 지운다. 꺼낼 때 파일 시각을 새로 고쳐 "최근에 씀"을 표시한다.
+- **저장하는 것**: 대본 문장만 저장한다. 질의응답 답과 운영체제 음성은 저장하지 않는다.
+- **미리 만들기 작업**: <flow name="대본 소리 미리 만들기">대로 한다. 스레드 하나가 명령 큐로 시작·멈춤·장 다시 만들기를 받고, 진행을 Qt 신호로 알린다.
+- 근거: 21.
 </module>
 
 <module name="ppt_reader/voice/signal.py">
@@ -574,15 +647,17 @@ class Engine:
 <module name="ppt_reader/voice/player.py">
 - **장치**: `QMediaDevices.audioOutputs()`로 고른다. 기존 설정의 SAPI 출력 토큰 id는 끝부분(`{0.0.0.00000000}.{GUID}`)이 Qt 장치 id와 같으므로 그 부분으로 맞춘다. 고른 장치가 없으면 기본 장치로 재생한다(기존 규칙).
 - **두 가지 재생 길**: 늘일 배율 r = 요청 배속 ÷ `engine_speed`에 따라 고른다.
-  - r ≤ 1.01: `QAudioSink`(22050Hz, mono, Int16)에 PCM을 넣는다. 재생 위치는 `processedUSecs()`(10ms 단위)다.
+  - r ≤ 1.01: `QAudioSink`(그 문장의 `rate`, mono, Int16)에 PCM을 넣는다. 재생 위치는 `processedUSecs()`(10ms 단위)다.
   - r > 1.01: WAV 바이트를 `QBuffer`에 담아 `QMediaPlayer.setSourceDevice`로 넘기고 `setPlaybackRate(r)`를 한다. `pitchCompensation`을 켠다. 위치(`position()`)는 원본 시각으로 50~100ms마다만 바뀌므로, 화면 쪽에서 벽시계로 보간한다.
   - FFmpeg 백엔드만 음높이를 지킨다. 그래서 앱 시작 전에 환경 변수 `QT_MEDIA_BACKEND=ffmpeg`을 둔다.
+  - 클라우드 음성은 `engine_speed`가 늘 1이라 x1.5·x2·x5에서 r이 그대로 배속이 된다.
+  - 표본 빈도는 문장마다 `Synth.rate`를 따른다(ElevenLabs·운영체제 22050Hz, Gemini 24000Hz). 문장마다 재생을 새로 시작하므로 섞여도 된다.
 - **블루투스 앞 무음**: 기존 규칙(`LEAD_SILENCE_MS = 1000`, `IDLE_BEFORE_LEAD = 2.0`)을 그대로 따른다.
   - 넣는 때: 처음 읽을 때, 2초 넘게 조용했을 때, 출력 장치가 바뀌었을 때
   - 넣는 법: 첫 문장 PCM 앞에 0을 붙인다. 길이는 1000ms × r이다. 그래서 늘인 뒤에도 정확히 1초가 된다.
   - 이것으로 지금 구현의 버그(SAPI `<silence>`가 배속만큼 짧아짐)가 없어진다.
   - Qt는 Windows에서 이 예열을 해 주지 않으므로 앱이 꼭 붙여야 한다.
-- 근거: 10, `docs/research/qt-audio-tts.md`.
+- 근거: 10, 21, `docs/research/qt-audio-tts.md`.
 </module>
 
 <module name="ppt_reader/voice/pipeline.py">
@@ -591,7 +666,12 @@ class Engine:
   - (문장 번호, 재생 위치 초, 곡선 값, 입 모양, 지금까지 시작한 낱말 수)
 - **멈추기**: 재생을 멈추고 줄을 비운다. 멈춘 뒤 늦게 온 합성 결과는 token으로 버린다.
 - **끝 알림**: 대본 한 장이나 답 하나가 끝나면 session에 done을 알린다. 완주했는지도 함께 보낸다.
-- 근거: 10, 16.
+- **엔진 고르기**: 설정의 `voice_engine`이 클라우드이고 그 키 확인이 맞았을 때만 클라우드 엔진을 쓴다. 아니면 운영체제 음성이다.
+- **클라우드 실패 시**: 그 문장을 운영체제 음성으로 다시 합성해 이어 읽고, session에 실패 종류를 알린다(알림 줄). 그 뒤는 오류 종류에 따라 다르다.
+  - `network`, `timeout`, `other`: 이번 장(또는 이번 답)이 끝날 때까지 운영체제 음성으로 읽고, 다음 장이나 다음 답에서 클라우드를 다시 시도한다.
+  - `key`, `quota`: 그 제공자의 `key_ok`를 거짓으로 바꾸고, 설정에서 키를 다시 확인할 때까지 운영체제 음성으로 읽는다. 알림 줄은 처음 한 번만 띄운다.
+- **앞뒤 문장**: 대본은 한 장 안의 앞뒤 문장을 `prev_text`, `next_text`로 넘긴다. 답은 앞 문장만 넘긴다(뒤 문장은 아직 오지 않았다).
+- 근거: 10, 16, 21.
 </module>
 
 <module name="ppt_reader/llm/base.py, claude.py, openai.py, gemini.py">
@@ -759,12 +839,15 @@ class Provider:
 | 답하다 끊김 | `앗, 말하다가 연결이 끊겼어요.` |
 | 알림 줄: 연동 끊김 | `PowerPoint 연결이 끊겼어요` |
 | 알림 줄: 음성 실패 | `목소리를 낼 수 없어요. 출력 장치를 확인하세요.` |
+| 알림 줄: 클라우드 음성 실패 `[보충]` | 키 문제 `{제공자} 키가 맞지 않아 운영체제 음성으로 읽어요.` / 요금·한도 `{제공자} 사용량 한도라 운영체제 음성으로 읽어요.` / 그 밖 `{제공자} 목소리를 쓸 수 없어 운영체제 음성으로 읽어요.` |
 | 설정 창 제목 | `설정 — PPT 읽어주기` |
 | 머리 | `발표 준비 {n} / 4` / `발표 준비 끝! 🎉` |
 | 카드 이름 | `발표 자료` / `목소리` / `질의응답` / `캐릭터와 화면`, 표시 `다음 할 일` |
 | 발표 자료 | `슬라이드 {N}장 · 노트 있는 장 {k}개 · 고친 대본 {m}장`, `다른 파일…`, `📝 대본 열기`, `파일 열기…`, `또는 PowerPoint에 자료를 열고 연동을 켜세요`, `PowerPoint 연동`, `읽을 내용` |
 | 연동 칩 | `PowerPoint 연결됨 · 쇼 진행 중 {n}번 장` / `PowerPoint 연결됨 · 편집 화면 {n}번 장` / `PowerPoint 찾는 중…` / `PowerPoint에 열린 발표 자료가 없어요` / `PowerPoint 연결이 끊겼어요` / `연동 꺼짐` / `파일 없음` |
 | 목소리 | `목소리`, `들어 보기`, `출력 장치`, `다 읽으면 다음 장으로 넘어가기 (자동 발표)`, `쇼에서 장을 넘기면 바로 읽기`, `배속은 원 버튼의 위성 버튼에서 바꿔요.` |
+| 목소리 엔진 `[보충]` | `목소리 엔진`, `운영체제 음성`, `ElevenLabs`, `Gemini`, `모델`, `API 키`, `질의응답의 Gemini 키와 같아요`, `ElevenLabs 무료 등급은 한 달에 약 1만 자예요. 미리 만들기에도 글자 수가 들어요.`, `키를 확인하기 전까지는 운영체제 음성으로 읽어요` |
+| 대본 소리 미리 만들기 | `대본 소리 만드는 중 {done} / {total}`, `대본 소리 준비됨`, `대본 소리를 만들지 못했어요: {이유}` |
 | 질의응답 | `AI 제공자`, `모델`, `{모델} (기본)`, `직접 입력…`, `API 키`, `보기`/`숨기기`, `확인`, `개인 지침`, `모든 답에 반영돼요`, `그림 설명(캡션) 만들기`, `질의응답 근거로만 씀 · 요금이 조금 듦` |
 | 키 확인 결과 | `키를 넣고 [확인]을 누르세요` / `확인 중…` / `✓ 키가 맞아요` / `✕ 키가 틀렸어요. 다시 확인하세요` / `확인하지 못했어요: {이유}` |
 | 캐릭터와 화면 | `강아지`, `시바`/`치비 시바`, `비숑`/`몽실 비숑`, `비글`/`날씬 비글`, `· 기본`, `강아지 보이기`, `원 버튼 모니터`, `강아지도 이 모니터에서만 다녀요`, `쇼가 뜬 모니터 따라가기`, `{번호}번 — {이름} ({가로}×{세로})` |
@@ -784,14 +867,14 @@ class Provider:
 | `test_session.py` | 옛 `test_app_logic.py`의 일곱 시험(열기와 읽기, 자동 발표의 숨긴 장 건너뛰기, 고친 대본, PowerPoint 따라가기, 출력 장치, 모르는 파일, 설정 저장)을 가짜 음성·연동으로 옮긴다. 질의응답 흐름(생각 중 → 말하는 중 → idle, 질문을 보내면 읽기 멈춤, 기쁨 1.5초)도 시험한다 |
 | `test_qa.py` | 근거 묶음의 내용과 순서(바뀌지 않는 부분이 앞, 지금 화면은 질문 쪽), 지침 합치기, 대화 기억 6번과 `(끊김)`, 문장 자르기(`3.5배`, 따옴표, 줄바꿈, 스트림 끝) |
 | `test_llm.py` | 가짜 SDK 응답으로 세 어댑터: 글 조각만 나오고 생각 조각은 버림, `mid → medium`, SDK 예외를 다섯 종류로 바꾸기, 취소 |
-| `test_voice.py` | 가짜 PCM으로 크기 곡선, 입 모양 판정(20%·55%, 가로 입 중성, 60ms 유지, 한글 아닌 글자), 음절 시각 어림, 블루투스 무음 길이 × r, 늘일 배율 r 계산, macOS 낱말 시각 어림. 옛 `test_tts.py`의 앞 무음 규칙을 여기로 옮긴다 |
+| `test_voice.py` | 가짜 PCM으로 크기 곡선, 입 모양 판정(20%·55%, 가로 입 중성, 60ms 유지, 한글 아닌 글자), 음절 시각 어림, 블루투스 무음 길이 × r, 늘일 배율 r 계산, macOS 낱말 시각 어림. 옛 `test_tts.py`의 앞 무음 규칙을 여기로 옮긴다. 클라우드: 가짜 HTTP 응답으로 ElevenLabs 글자 시각 → 낱말 시각, 글자가 안 맞으면 어림, 오류 코드 → 다섯 종류, 오류 문구에 키가 남지 않음, Gemini 24kHz와 어림. 저장: 키(앞뒤 문장 포함), 500MB 정리, 꺼낼 때 시각 고침. 흐름: 클라우드 실패 시 그 문장부터 운영체제 음성, 다음 장에서 다시 시도(`network`)와 키 확인 전까지 운영체제 음성(`key`·`quota`), 미리 만들기 차례와 읽기 우선 |
 | `test_captions.py` | 시험용 pptx를 코드로 만들어 그림 꺼내기(그룹, 자리표시자, 잘라내기), 작은 그림과 네 장 이상 반복 그림 빼기, 해시로 다시 쓰기, 고친 캡션 안 덮어쓰기, 40개 상한, 1024px 줄이기, 캡션 답 파싱 |
-| `test_settings.py` | 기본값, 옛 설정 옮기기(속도 반올림 포함), 고친 대본 저장과 `원본이 바뀌었어요` 판정, 생각 깊이를 저장하지 않음 |
+| `test_settings.py` | 기본값, 옛 설정 옮기기(속도 반올림 포함), 고친 대본 저장과 `원본이 바뀌었어요` 판정, 생각 깊이를 저장하지 않음, 목소리 엔진·클라우드 목소리 값 검사, Gemini 키 함께 쓰기 |
 | `test_follow.py` | 따라가기 계산: 속도 공식, 오른쪽·아래 가장자리에서 반대쪽, 다른 모니터면 원 버튼 옆 자리, 원 버튼 묶음 위면 대기, 질의응답 중 머묾 |
 | `test_errors.py` | 가짜 시계로 8초·30초 기다리는 말, low 45·mid 90·high 150초 시간 초과, 30초 멈춤, 오류 때 질문 다시 채우기 |
 | `test_ui.py` | pytest-qt, `QT_QPA_PLATFORM=offscreen`: 창들이 뜨는지, 위성 버튼을 누르면 session이 불리는지, 설정 창에서 바꾼 값이 바로 저장되는지 |
 
-- **실제 LLM 시험**: `@pytest.mark.live`를 달고, 환경 변수 `PPT_READER_LIVE_CLAUDE`, `PPT_READER_LIVE_OPENAI`, `PPT_READER_LIVE_GEMINI`에 키가 있을 때만 돈다.
+- **실제 LLM 시험**: `@pytest.mark.live`를 달고, 환경 변수 `PPT_READER_LIVE_CLAUDE`, `PPT_READER_LIVE_OPENAI`, `PPT_READER_LIVE_GEMINI`, `PPT_READER_LIVE_ELEVENLABS`에 키가 있을 때만 돈다. 음성은 제공자마다 기본 모델로 짧은 한 문장을 합성한다.
   - 제공자마다 기본 모델, 생각 깊이 low로 짧은 질문 하나와 작은 그림 캡션 하나를 보낸다.
   - 빌드 서버에서는 돌리지 않는다.
 - 근거: 19.
@@ -806,11 +889,12 @@ class Provider:
 5. 말풍선 낱말과 강아지 입(가로 입 포함)이 목소리와 맞는다.
 6. x1.5, x2, x5의 음질(Heami와 다른 음성 각각)을 귀로 들어 본다.
 7. 블루투스 이어폰으로 처음 읽을 때와 쉬었다가 읽을 때 첫마디가 잘리지 않는다.
-8. 자동 발표가 숨긴 장을 건너뛰며 끝까지 가고, 끝에서 강아지가 기뻐한다.
-9. 세 제공자 모두로 질의응답이 된다(low/high 각각).
-10. 틀린 키, 인터넷 끊김, 답하다 끊김에서 강아지 말과 알림 줄이 맞게 나온다.
-11. 캡션을 켜면 그림 설명이 생기고, 고칠 수 있고, 다시 켜도 다시 만들지 않는다.
-12. 화면 배율 100%와 150%에서 설정 창과 대본 창이 잘리지 않는다.
+8. ElevenLabs와 Gemini 목소리로 대본과 답을 읽는다(x1, x2, x5). 미리 만든 뒤 인터넷을 끊어도 대본을 읽고, 답하는 중에 인터넷을 끊으면 운영체제 음성으로 이어진다.
+9. 자동 발표가 숨긴 장을 건너뛰며 끝까지 가고, 끝에서 강아지가 기뻐한다.
+10. 세 제공자 모두로 질의응답이 된다(low/high 각각).
+11. 틀린 키, 인터넷 끊김, 답하다 끊김에서 강아지 말과 알림 줄이 맞게 나온다.
+12. 캡션을 켜면 그림 설명이 생기고, 고칠 수 있고, 다시 켜도 다시 만들지 않는다.
+13. 화면 배율 100%와 150%에서 설정 창과 대본 창이 잘리지 않는다.
 
 **macOS(받는 사람, M1 Pro)**: `handoff/macos.txt`에 넣는다. 결과를 사진으로 돌려받는다.
 1. macOS 판이 15 이상이다.
@@ -877,6 +961,12 @@ class Provider:
 12. LLM 키를 로그나 오류 문구에 찍지 않는다. SDK 예외 문자열에 키 일부가 들어 있을 수 있으니 오류 첫 줄에서도 키 모양 문자열을 지운다.
 13. 시험과 검증은 사용자의 설정 폴더를 건드리지 않는다. `PPT_READER_HOME`을 임시 폴더로 둔다.
 14. 화면을 캡처해 검증할 때는 앱 창 영역만 찍는다. 다른 창(메신저 등)이 찍히지 않게 한다. 실제 클릭이나 키 입력을 흉내 내는 시험은 사용자 PC에서 하지 않는다.
+15. ElevenLabs 기본 목소리는 2026-12-31에 만료되고, 2026년 3월 이후 만든 계정에는 처음부터 없다. 목소리 id를 코드에 넣지 말고 목록에서 고른다.
+16. ElevenLabs `pcm_44100`은 Pro 등급 이상이다. 무료 등급도 되는 `pcm_22050`을 쓴다.
+17. ElevenLabs `alignment`의 글자를 이어 붙이면 보낸 글과 같다는 보장이 문서에 없다. 다르거나 없으면 글자 수로 어림한다.
+18. ElevenLabs 키는 기본으로 권한이 제한되어 있다. 목소리 읽기와 음성 합성 권한이 없으면 403이 온다.
+19. Gemini 음성은 24kHz만 준다. 22050Hz로 바꾸지 말고 `Synth.rate`로 넘긴다.
+20. OpenAI 음성 합성 모델은 2027-01-06에 종료되고, GPT-Live는 대화 전용이다. OpenAI 음성은 넣지 않는다.
 </known_pitfalls>
 
 <workflow>
@@ -888,8 +978,8 @@ class Provider:
    - 빌드 워크플로(저장소 공개 전 확인 포함)
    - 확인: 두 운영체제 빌드 성공, macOS 화면 시험 사진에서 가짜 전체 화면 위에 창이 보임
    - macOS는 빌드 서버로만 확인할 수 있으므로 이 길을 먼저 뚫는다.
-2. **음성 흐름**: `voice/` 전체. 대본 읽기, 자동 발표, `--say`를 새 흐름으로 옮긴다.
-   - 확인: 블루투스 첫마디, 배속 네 가지, 장치 고르기
+2. **음성 흐름**: `voice/` 전체(클라우드 음성, 저장, 미리 만들기 포함). 대본 읽기, 자동 발표, `--say`를 새 흐름으로 옮긴다. 설정 창(5단계) 전에는 `settings.json`으로 엔진을 고른다.
+   - 확인: 블루투스 첫마디, 배속 네 가지, 장치 고르기, 클라우드 실패 시 운영체제 음성으로 이어 읽기
 3. **강아지와 원 버튼**: 따라가기, 자세, 파동, 위성 버튼, 알림 줄
    - 확인: 쇼 위 표시, 클릭 통과, 포커스
 4. **질의응답**: `llm/`, `qa.py`, 질문창, 생각 깊이, 말풍선 스트림, 오류 반응
@@ -908,6 +998,8 @@ class Provider:
 - [ ] 강아지 입과 말풍선 낱말이 목소리를 따라가고, ㅣ·ㅔ 소리에서 가로 입이 나온다
 - [ ] x1, x1.5, x2, x5가 모든 음성에서 동작하고 음높이가 유지된다
 - [ ] 블루투스 첫마디가 잘리지 않고, 앞 무음이 배속과 상관없이 1초다
+- [ ] 목소리 엔진(운영체제 음성, ElevenLabs, Gemini)을 고를 수 있고, 클라우드 음성이 실패하면 그 문장부터 운영체제 음성으로 이어 읽는다
+- [ ] 클라우드 음성은 미리 만든 대본 소리로 인터넷 없이 대본을 읽는다
 - [ ] 세 제공자로 질의응답이 되고, 다섯 오류가 <ui_strings>대로 나온다
 - [ ] 설정은 바꾸면 바로 저장되고, 고친 대본과 캡션이 다시 켜도 남는다
 - [ ] 같은 장을 두 번 읽는 일이 없다(기존 기준)
@@ -944,6 +1036,8 @@ class Provider:
 | 18 | 오류 반응 | `issues/18-grilling-error-reactions.md` |
 | 19 | 시험 방법 | `issues/19-grilling-test-plan.md` |
 | 20 | 기획서 위치와 목차 | `issues/20-grilling-spec-outline.md` |
+| 21 | 클라우드 음성을 목소리 엔진으로 | `issues/21-grilling-cloud-voice.md` |
+| 22 | 클라우드 음성 API 조사 | `issues/22-research-cloud-tts.md`, `docs/research/cloud-tts.md` |
 `issues/`는 `.scratch/character-qa/issues/`다.
 </evidence>
 
