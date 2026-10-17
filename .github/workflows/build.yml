@@ -63,10 +63,6 @@ jobs:
           archs=$(lipo -archs dist/PPTReader.app/Contents/MacOS/PPTReader)
           echo "아키텍처: $archs"
           test "$archs" = "arm64"
-      - name: 화면 시험(가짜 전체 화면 쇼 위)
-        run: |
-          brew install cliclick
-          python tools/mac_screen_test.py run dist/PPTReader.app shots
       - name: 묶기
         run: |
           # 앱과 안내문, 라이선스를 한 폴더에 담아 ditto로 묶는다(그냥 zip하면 실행 권한과 링크가 깨져 "손상됨"이 뜬다)
@@ -79,6 +75,10 @@ jobs:
         with:
           path: PPTReader-macos-arm64.zip
           archive: false
+      - name: 화면 시험(가짜 전체 화면 쇼 위)
+        run: |
+          brew install cliclick
+          python tools/mac_screen_test.py run dist/PPTReader.app shots
       - uses: actions/upload-artifact@v7
         if: always()
         with:
