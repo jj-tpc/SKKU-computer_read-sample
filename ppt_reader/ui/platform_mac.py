@@ -92,6 +92,43 @@ def _trace(*parts) -> None:
         print(f"[mac-focus {time.monotonic() - _T0:7.2f}]", *parts, file=sys.stderr, flush=True)
 
 
+_KEY_DOWN_MASK = 1 << 10  # NSEventMaskKeyDown
+_ESCAPE_KEY = 53
+_key_monitor = None  # pyobjc가 블록을 놓지 않게 붙들어 둔다
+
+
+def watch_escape(on_escape) -> bool:
+    """앱으로 오는 키 입력을 창보다 먼저 본다(NSEvent local monitor, 손쉬운 사용 권한 필요 없음).
+
+    Esc면 on_escape()를 부르고, True를 돌려주면 그 입력을 먹는다. 빌드 서버에서 질문창이 글자는 받는데
+    Esc만 Qt까지 오지 않을 때가 있었다(AppKit이 Esc를 취소 명령으로 먼저 쓰는 것으로 보인다).
+    """
+    global _key_monitor
+    if not _cocoa() or _key_monitor is not None:
+        return False
+    try:
+        from AppKit import NSEvent
+
+        def handler(event):
+            if event.keyCode() != _ESCAPE_KEY:
+                return event  # 다른 키는 무엇인지 남기지 않는다(질문 글이 로그에 남지 않게)
+            used = bool(on_escape())
+            _trace("esc monitor", "used" if used else "passed")
+            return None if used else event
+
+        _key_monitor = NSEvent.addLocalMonitorForEventsMatchingMask_handler_(_KEY_DOWN_MASK, handler)
+        return _key_monitor is not None
+    except Exception as e:
+        _trace("watch_escape error", repr(e))
+        return False
+
+
+def trace(*parts) -> None:
+    """진단 줄을 다른 모듈에서 남길 때(PPT_READER_TRACE가 있을 때만)."""
+    if sys.platform == "darwin":
+        _trace(*parts)
+
+
 def order_out(widget) -> None:
     """질문창을 숨긴 뒤 화면에서 확실히 내린다. 빌드 서버에서 Qt가 숨긴 뒤에도 다음 입력까지 그림이 남았다."""
     if not _cocoa():

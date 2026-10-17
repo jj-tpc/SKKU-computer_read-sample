@@ -234,6 +234,7 @@ class OrbWindow(OverlayWindow):
         if event.button() != Qt.MouseButton.LeftButton:
             event.ignore()
             return
+        platform_mac.trace_state("orb press")
         local = event.position()
         if _dist(local, CENTER) <= R + BAR_GAP:
             if self.is_open:
@@ -447,6 +448,7 @@ class QuestionWindow(QWidget):
         esc = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
         esc.setContext(Qt.ShortcutContext.ApplicationShortcut)  # 질문창이 보이는 동안 앱 어디서나
         esc.activated.connect(lambda: self.close_box() if self.isVisible() else None)
+        platform_mac.watch_escape(self._escape_from_mac)
         self._pill_font = QFont(theme.FONT_FAMILY)
         self._pill_font.setPixelSize(13)
         self._pill_font.setBold(True)
@@ -482,6 +484,12 @@ class QuestionWindow(QWidget):
             self.activateWindow()
         self.edit.setFocus()
         platform_mac.trace_state("question opened")
+
+    def _escape_from_mac(self) -> bool:
+        if not self.isVisible():
+            return False
+        self.close_box()
+        return True
 
     def close_box(self) -> None:
         platform_mac.trace_state("question closing")

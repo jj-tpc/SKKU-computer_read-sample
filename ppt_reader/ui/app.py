@@ -84,6 +84,9 @@ class Controller(QObject):
         self.orb = OrbWindow(self.on_action)
         self.orb.set_speed(settings["speed"])
         self.question = QuestionWindow(self._send_question, self._question_closed)
+        app = QGuiApplication.instance()
+        if app is not None:  # 진단: 이 앱이 언제 활성이 되는지(PPT_READER_TRACE)
+            app.applicationStateChanged.connect(lambda state: platform_mac.trace("app state", state.name))
         self.bubble = BubbleWindow()
         self._bubble_text = ""
         self.settings_window = None
