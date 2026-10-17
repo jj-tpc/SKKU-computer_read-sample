@@ -38,6 +38,8 @@ def coral_at(t: float) -> QColor:
     return QColor(CORAL_D)
 
 
+CORAL_QSS = f"qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 {CORAL_L}, stop:0.55 {CORAL}, stop:1 {CORAL_D})"
+
 STYLESHEET = f"""
 QToolTip {{
     background-color: rgba(11, 58, 83, 240);
@@ -48,4 +50,38 @@ QToolTip {{
     font-family: "{FONT_FAMILY}";
     font-size: 13px;
 }}
+QWidget#settingsRoot, QWidget#scriptRoot {{ font-family: "{FONT_FAMILY}"; font-size: 14px; color: {OCEAN_800}; }}
+QWidget#settingsScroll {{ background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 {FOAM}, stop:0.32 #FFFFFF, stop:1 #FFFFFF); }}
+QFrame#card {{ background: #FFFFFF; border: 1px solid {LINE}; border-radius: 16px; }}
+QLabel#cardTitle {{ font-size: 16px; font-weight: 700; }}
+QLabel#cardSum, QLabel#hint {{ font-size: 12px; color: {MUTED}; }}
+QLabel#heroTitle {{ font-size: 21px; font-weight: 700; }}
+QLabel#nextTag {{ font-size: 11px; font-weight: 700; color: white; background: {CORAL_QSS}; border-radius: 9px; padding: 2px 8px; }}
+QLabel#fieldLabel {{ font-size: 13px; font-weight: 600; }}
+QLabel#num {{ border-radius: 14px; font-weight: 700; font-size: 13px; background: {FOAM}; color: {OCEAN_700}; }}
+QLabel#num[done="true"] {{ background: #E3F6EF; color: {OK}; }}
+QLabel#num[next="true"] {{ background: {CORAL_QSS}; color: white; }}
+QLabel#chip {{ font-size: 12px; padding: 3px 10px; border-radius: 11px; background: {FOAM}; color: {OCEAN_700}; }}
+QLabel#chip[tone="ok"] {{ background: #E3F6EF; color: {OK}; }}
+QLabel#chip[tone="bad"] {{ background: #FDE8EE; color: {BAD}; }}
+QLabel#chip[tone="warn"] {{ background: #FFF1E6; color: {WARN}; }}
+QLabel#chip[tone="off"] {{ background: #EEF2F4; color: #7C93A0; }}
+QLabel#toast {{ background: rgba(11, 58, 83, 235); color: white; border-radius: 10px; padding: 6px 14px; font-size: 13px; }}
+QPushButton {{ border: 1px solid {LINE}; background: #FFFFFF; border-radius: 10px; padding: 6px 14px; color: {OCEAN_800}; }}
+QPushButton:hover {{ background: {FOAM_2}; }}
+QPushButton[primary="true"] {{ border: 0; background: {CORAL_QSS}; color: white; font-weight: 700; }}
+QPushButton[small="true"] {{ padding: 4px 10px; font-size: 13px; border-radius: 8px; }}
+QPushButton[seg="true"] {{ border: 0; background: transparent; padding: 6px 12px; border-radius: 8px; color: {OCEAN_700}; }}
+QPushButton[seg="true"]:checked {{ background: #FFFFFF; color: {CORAL_D}; font-weight: 700; }}
+QPushButton#link {{ border: 0; background: transparent; color: {OCEAN_600}; text-decoration: underline; padding: 0; }}
+QFrame#seg {{ background: {FOAM}; border-radius: 10px; }}
+QComboBox, QLineEdit, QPlainTextEdit {{ border: 1px solid {LINE}; border-radius: 10px; padding: 6px 10px; background: #FFFFFF; color: {OCEAN_800}; }}
+QComboBox:focus, QLineEdit:focus, QPlainTextEdit:focus {{ border-color: {AQUA}; }}
+QFrame#film {{ background: {OCEAN_800}; }}
+QPushButton#slideCard {{ background: #FFFFFF; border: 2px solid transparent; border-radius: 10px; text-align: left; padding: 6px 8px; }}
+QPushButton#slideCard:checked {{ border: 2px solid {CORAL}; }}
+QWidget#work {{ background: {FOAM_2}; }}
+QFrame#capBox {{ background: #FFFFFF; border: 1px solid {LINE}; border-radius: 10px; }}
+QProgressBar {{ border: 0; border-radius: 4px; background: #DCEBF0; max-height: 8px; }}
+QProgressBar::chunk {{ border-radius: 4px; background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {AQUA}, stop:1 {OCEAN_600}); }}
 """

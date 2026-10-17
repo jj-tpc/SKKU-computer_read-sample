@@ -9,8 +9,8 @@ import random
 from typing import Callable
 
 from PySide6.QtCore import QEvent, QPoint, QPointF, QRect, QRectF, Qt
-from PySide6.QtGui import (QColor, QFont, QFontMetrics, QLinearGradient, QPainter, QPainterPath, QPen, QPolygonF,
-                           QRadialGradient, QRegion)
+from PySide6.QtGui import (QColor, QFont, QFontMetrics, QKeySequence, QLinearGradient, QPainter, QPainterPath, QPen,
+                           QPolygonF, QRadialGradient, QRegion, QShortcut)
 from PySide6.QtWidgets import QLineEdit, QToolTip, QWidget
 
 from . import platform_mac, theme
@@ -444,6 +444,9 @@ class QuestionWindow(QWidget):
         self.edit.returnPressed.connect(self.send)
         # 입력 칸이 Esc를 먹어도 닫히게, 입력 칸보다 먼저 받는다(창이 활성이 아니어도 된다)
         self.edit.installEventFilter(self)
+        esc = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
+        esc.setContext(Qt.ShortcutContext.ApplicationShortcut)  # 질문창이 보이는 동안 앱 어디서나
+        esc.activated.connect(lambda: self.close_box() if self.isVisible() else None)
         self._pill_font = QFont(theme.FONT_FAMILY)
         self._pill_font.setPixelSize(13)
         self._pill_font.setBold(True)
@@ -502,8 +505,12 @@ class QuestionWindow(QWidget):
     # ------------------------------------------------------------ 입력
 
     def eventFilter(self, obj, event):
-        if obj is self.edit and event.type() == QEvent.Type.KeyPress and event.key() == Qt.Key.Key_Escape:
-            self.close_box()
+        # macOS는 Esc를 단축키 처리 단계(ShortcutOverride)에서 먼저 넘기므로 두 단계 모두 받는다
+        if (obj is self.edit and event.type() in (QEvent.Type.KeyPress, QEvent.Type.ShortcutOverride)
+                and event.key() == Qt.Key.Key_Escape):
+            event.accept()
+            if self.isVisible():
+                self.close_box()
             return True
         return super().eventFilter(obj, event)
 

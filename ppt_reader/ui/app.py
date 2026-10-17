@@ -5,19 +5,22 @@ import os
 import sys
 import threading
 import time
+from pathlib import Path
 from typing import Callable
 
-from PySide6.QtCore import QObject, QRect, QTimer, qVersion
-from PySide6.QtGui import QCursor, QGuiApplication, QScreen
-from PySide6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtCore import QObject, QRect, QTimer, QUrl, qVersion
+from PySide6.QtGui import QCursor, QDesktopServices, QGuiApplication, QScreen
+from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox
+
+from ..captions import CaptionStore, CaptionWorker, extract, plan
 
 from ..follow import Area, Follower, wait_spot
-from ..llm.base import make_provider, start_stream
-from ..session import READING, SPEAKING, THINKING, Session
+from ..llm.base import LLMError, make_provider, start_stream
+from ..session import CHIP_OFF, READING, SPEAKING, THINKING, Session
 from ..settings import DOGS, Settings, app_folder
 from ..slides import to_speech
 from ..voice.cache import sentence_plan
-from ..voice.cloud import cloud_engine
+from ..voice.cloud import ElevenLabsEngine, VoiceError, cloud_engine
 from . import platform_mac, platform_win, theme
 from .bubble import BubbleWindow
 from .dog import FRAMES, SWEAT_ROW, DogWindow, load_sheet
@@ -28,6 +31,10 @@ APP_TITLE = "PPT 읽어주기"
 FRAME_MS = 33  # 강아지와 원 버튼을 함께 그리는 타이머(약 30fps)
 HAPPY_SECONDS = 1.5
 MONITOR_CHECK_MS = 1000  # "쇼가 뜬 모니터 따라가기"일 때 쇼 창의 모니터를 다시 보는 간격
+PREVIEW_TEXT = "안녕하세요. 이 목소리로 읽어 드릴게요."
+DEFAULT_OUTPUT = "시스템 기본 장치"
+FILE_DIALOG_TITLE = "발표할 PPT 파일 선택"
+FILE_FILTER = "PowerPoint 프레젠테이션 (*.pptx *.pptm);;모든 파일 (*.*)"
 
 
 def screen_for_native_rect(rect: tuple[int, int, int, int]) -> QScreen | None:
@@ -60,6 +67,17 @@ class Controller(QObject):
         self.question = QuestionWindow(self._send_question, self._question_closed)
         self.bubble = BubbleWindow()
         self._bubble_text = ""
+        self.settings_window = None
+        self.script_window = None
+        self.invoker: MainThreadInvoker | None = None  # run()이 넣는다. 작업 스레드의 결과를 화면 스레드로
+        self.link_chip = CHIP_OFF  # 연동 중일 때 session이 알려 준 마지막 칩 문구
+        self.pictures: dict = {}  # 장 번호 -> 그림 목록(캡션)
+        self.caption_store = CaptionStore(settings.folder)
+        self.caption_worker: CaptionWorker | None = None
+        self.caption_state: tuple[str, int, int, str] = ("off", 0, 0, "")
+        self.caption_over_limit = False
+        self._el_voices: list = []
+        self._el_loading = False
         self.follower = Follower()
         self._screen_now: QScreen | None = None
         self._area = Area(0, 0, 1, 1)
@@ -80,7 +98,9 @@ class Controller(QObject):
         session.on_question = self._on_question
         if pipeline is not None:
             pipeline.on_started = session.voice_started
-        session.on_deck = lambda _deck: self.start_presynth()
+        session.on_deck = self._on_deck
+        session.on_link = self._on_link
+        session.on_slide = self._on_slide
         session.on_script = self._on_script
 
     def start(self) -> None:
@@ -94,8 +114,10 @@ class Controller(QObject):
         self.orb.raise_()  # 원 버튼 묶음은 늘 강아지보다 위
         self._timer.start()
         self._monitor_timer.start()
-        if self.settings.first_run:
+        if self.settings.first_run:  # 처음 켰을 때: 강아지가 기뻐하고 설정 창이 저절로 열린다
             self._on_pose("happy")
+            self.open_settings(first_run=True)
+            self.settings.set(first_run_done=True)
 
     def _screen(self) -> QScreen:
         """설정의 원 버튼 모니터. 쇼 따라가기면 쇼 창이 있는 모니터, 모르면 주 모니터(macOS는 늘 주 모니터)."""
@@ -187,10 +209,12 @@ class Controller(QObject):
 
     def presynth_progress(self, done: int, total: int) -> None:
         self.presynth_state = ("done" if done >= total else "making", done, total, "")
+        self._refresh_windows()
 
     def presynth_failed(self, kind: str, detail: str) -> None:
         _, done, total, _ = self.presynth_state
         self.presynth_state = ("failed", done, total, detail or kind)
+        self._refresh_windows()
 
     def _on_pose(self, pose: str) -> None:
         if pose == "happy":
@@ -231,8 +255,294 @@ class Controller(QObject):
         else:
             self.bubble.hide()
 
+    # ------------------------------------------------------------ 설정 창, 대본 창
+
+    def _post(self, fn, *args) -> None:
+        if self.invoker is not None:
+            self.invoker.post(fn, args)
+        else:
+            fn(*args)
+
+    def _refresh_windows(self) -> None:
+        if self.settings_window is not None and self.settings_window.isVisible():
+            self.settings_window.refresh()
+        if self.script_window is not None and self.script_window.isVisible():
+            self.script_window.show_captions()
+            self.script_window.refresh_cards()
+
+    def open_settings(self, first_run: bool = False) -> None:
+        from .settings_window import SettingsWindow
+
+        if self.settings_window is None:
+            self.settings_window = SettingsWindow(self)
+        self.settings_window.refresh()
+        self.settings_window.open_cards(first_run)
+        self.settings_window.show()
+        self.settings_window.raise_()
+        self.settings_window.activateWindow()
+
+    def open_script_window(self) -> None:
+        from .script_window import ScriptWindow
+
+        if self.session.deck is None:
+            return
+        if self.script_window is None:
+            self.script_window = ScriptWindow(self)
+        else:
+            self.script_window.rebuild()
+        self.script_window.show()
+        self.script_window.raise_()
+        self.script_window.activateWindow()
+
+    def open_file_dialog(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(self.settings_window, FILE_DIALOG_TITLE, "", FILE_FILTER)
+        if path:
+            self.session.open_file(path)
+
+    def open_licenses(self) -> None:
+        base = Path(sys.executable).parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parents[2]
+        for folder in (base / "licenses", base.parent / "Resources" / "licenses"):
+            if folder.is_dir():
+                QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
+                return
+
+    def apply(self, **values) -> None:
+        """설정 창에서 바꾼 값을 바로 저장하고 뒤따르는 일을 한다."""
+        self.session.set_options(**values)
+        if "dog" in values:
+            self.dog.set_dog(values["dog"])
+        if "dog_visible" in values:
+            self.dog.setVisible(values["dog_visible"])
+        if "monitor" in values:
+            self._screen_now = None
+            self._place()
+        if {"voice_engine", "cloud_voice"} & values.keys():
+            self.start_presynth()
+        if {"captions", "provider", "models"} & values.keys():
+            self.start_captions()
+
+    def set_link(self, on: bool) -> None:
+        self.session.set_link(on)
+        self._refresh_windows()
+
+    def set_key(self, owner: str, key: str) -> None:
+        self.settings.set_for("keys", owner, key)
+        self.settings.set_for("key_ok", owner, False)  # 새 키는 확인하기 전까지 쓰지 않는다
+        self._after_key(owner)
+
+    def check_key(self, owner: str, key: str, done: Callable[[bool | None, str], None]) -> None:
+        """그 제공자의 모델(목소리) 목록을 한 번 불러 본다. 맞음 True, 키 문제 False, 그 밖 None."""
+        def work():
+            try:
+                if owner == "elevenlabs":
+                    ElevenLabsEngine(key, "", "").check_key()
+                else:
+                    make_provider(owner, key).check_key()
+                result = (True, "")
+            except (LLMError, VoiceError) as e:
+                result = (False, e.detail) if e.kind == "key" else (None, e.detail or e.kind)
+            except Exception as e:
+                result = (None, str(e)[:120])
+            self._post(self._key_checked, owner, key, result, done)
+
+        threading.Thread(target=work, name="key-check", daemon=True).start()
+
+    def _key_checked(self, owner, key, result, done) -> None:
+        ok, reason = result
+        if key == self.settings["keys"].get(owner):
+            self.settings.set_for("key_ok", owner, ok is True)
+            self._after_key(owner)
+        done(ok, reason)
+
+    def _after_key(self, owner: str) -> None:
+        if owner == "elevenlabs":
+            self._el_voices = []
+        self.start_presynth()
+        self.start_captions()
+        self._refresh_windows()
+
+    def preview_voice(self) -> None:
+        if self.pipeline is None:
+            return
+        self.session.stop()
+        self.pipeline.speak(PREVIEW_TEXT, self.session.voice_id(), 1.0, tag=("preview",),
+                            output_id=self.session.output_id())
+
+    def os_voices(self) -> list[tuple[str, str, str]]:
+        voices = sorted(self.session.voice_list, key=lambda v: not v.is_korean)  # 한국어 음성 먼저
+        return [(v.id, f"{v.name}  [{v.lang}]" if v.lang else v.name, v.name) for v in voices]
+
+    def elevenlabs_voices(self) -> list:
+        """계정의 목소리 목록. 처음 부르면 뒤에서 불러오고, 다 오면 설정 창을 다시 그린다."""
+        s = self.settings
+        if not self._el_voices and not self._el_loading and s["key_ok"].get("elevenlabs") and s["keys"].get("elevenlabs"):
+            self._el_loading = True
+            key = s["keys"]["elevenlabs"]
+
+            def work():
+                try:
+                    voices = ElevenLabsEngine(key, "", "").voices()
+                except VoiceError:
+                    voices = []
+                self._post(self._el_loaded, voices)
+
+            threading.Thread(target=work, name="el-voices", daemon=True).start()
+        return list(self._el_voices)
+
+    def _el_loaded(self, voices) -> None:
+        self._el_voices, self._el_loading = voices, False
+        if voices and not self.settings["cloud_voice"]["elevenlabs"]["voice_id"]:
+            self.session.cloud_voice_chosen("elevenlabs", voices[0])  # 처음에는 첫 목소리
+        self._refresh_windows()
+
+    def output_choices(self):
+        from ..voice.player import AudioOutput, default_output, list_outputs
+
+        default = default_output()
+        first = DEFAULT_OUTPUT + (f" (지금: {default.name})" if default else "")
+        out, seen = [], set()
+        for o in list_outputs():
+            text, n = o.name, 2
+            while text in seen:  # 이름이 같은 장치가 여러 개면 번호를 붙인다
+                text, n = f"{o.name} ({n})", n + 1
+            seen.add(text)
+            out.append((o, text))
+        saved = self.settings["output"]
+        chosen = AudioOutput(saved["id"], saved["name"]) if saved else None
+        if chosen is not None and not any(o.id.lower() in chosen.id.lower() or chosen.id.lower() in o.id.lower()
+                                          for o, _ in out):
+            out.append((chosen, f"{chosen.name} (연결 안 됨 - 기본 장치로 읽음)"))
+        elif chosen is not None:
+            chosen = next(o for o, _ in out if o.id.lower() in chosen.id.lower() or chosen.id.lower() in o.id.lower())
+        return first, out, chosen
+
+    def monitor_choices(self) -> list[tuple[str, str]]:
+        items = [("follow", "쇼가 뜬 모니터 따라가기")]
+        for i, screen in enumerate(QGuiApplication.screens(), 1):
+            size, dpr = screen.size(), screen.devicePixelRatio()
+            items.append((screen.name(), f"{i}번 — {screen.name()} ({round(size.width() * dpr)}×{round(size.height() * dpr)})"))
+        return items
+
+    def presynth_text(self) -> str:
+        state, done, total, reason = self.presynth_state
+        if state == "making":
+            return f"대본 소리 만드는 중 {done} / {total}"
+        if state == "done":
+            return "대본 소리 준비됨"
+        if state == "failed":
+            return f"대본 소리를 만들지 못했어요: {reason}"
+        return ""
+
+    # ------------------------------------------------------------ 파일, 연동, 캡션
+
+    def _on_deck(self, deck) -> None:
+        self.start_presynth()
+        self.pictures = {}
+        self.session.captions = {}
+        self.caption_over_limit = False
+        if self.script_window is not None and self.script_window.isVisible():
+            self.script_window.rebuild()
+        self._refresh_windows()
+        if deck is None:
+            return
+        path = deck.path
+
+        def work():  # 큰 파일은 그림을 꺼내는 데 시간이 걸려서 뒤에서 한다
+            try:
+                from pptx import Presentation
+
+                pictures = extract(Presentation(path))
+            except Exception:
+                pictures = {}
+            self._post(self._pictures_ready, path, pictures)
+
+        threading.Thread(target=work, name="pictures", daemon=True).start()
+
+    def _pictures_ready(self, path, pictures) -> None:
+        deck = self.session.deck
+        if deck is None or deck.path != path:
+            return  # 그 사이 다른 파일을 열었다
+        self.pictures = pictures
+        self.session.captions = self.caption_store.texts(pictures)
+        if self.script_window is not None and self.script_window.isVisible():
+            self.script_window.rebuild()
+        self.start_captions()
+
+    def _on_link(self, text: str) -> None:
+        self.link_chip = text
+        self._refresh_windows()
+
+    def link_chip_state(self) -> tuple[str, str]:
+        """설정 창의 연동 칩: (글, 색). 연동이 꺼져 있으면 파일이 있나에 따라 "연동 꺼짐" 또는 "파일 없음"."""
+        if self.session.link is None:
+            return (CHIP_OFF if self.session.deck is not None else "파일 없음"), "off"
+        text = self.link_chip
+        return text, ("ok" if text.startswith("PowerPoint 연결됨") else "bad" if "끊겼" in text else "warn")
+
+    def _on_slide(self, index: int) -> None:
+        if self.script_window is not None and self.script_window.isVisible():
+            self.script_window.follow(index)
+
+    def start_captions(self, redo: bool = False) -> None:
+        s = self.settings
+        if self.caption_worker is not None:
+            self.caption_worker.stop()
+        deck = self.session.deck
+        if not s["captions"]:
+            self.caption_state = ("off", 0, 0, "")
+        elif not s["key_ok"].get(s["provider"]):
+            self.caption_state = ("paused", 0, 0, "")
+        elif deck is not None and self.pictures and self.caption_worker is not None:
+            todo, self.caption_over_limit = plan(self.pictures)
+            texts = {sl.number: sl.body for sl in deck.slides}
+            self.caption_state = ("making", 0, len(todo), "")
+            self.caption_worker.start(s["models"][s["provider"]], texts, todo, redo)
+        self._refresh_windows()
+
+    def stop_captions(self) -> None:
+        if self.caption_worker is not None:
+            self.caption_worker.stop()
+        _, done, total, _ = self.caption_state
+        self.caption_state = ("stopped", done, total, "")
+        self._refresh_windows()
+
+    def redo_captions(self) -> None:
+        self.start_captions(redo=True)
+
+    def caption_progress(self, done: int, total: int) -> None:
+        if self.caption_state[0] in ("making", "done"):
+            self.caption_state = ("done" if done >= total else "making", done, total, "")
+        self.session.captions = self.caption_store.texts(self.pictures)
+        self._refresh_windows()
+
+    def caption_failed(self, error) -> None:
+        _, done, total, _ = self.caption_state
+        self.caption_state = ("failed", done, total, error.detail or error.kind)
+        self._refresh_windows()
+
+    def edit_caption(self, key: str, text: str) -> None:
+        self.caption_store.edit(key, text)
+        self.session.captions = self.caption_store.texts(self.pictures)
+
+    def caption_view(self) -> tuple[str, str, str, bool, bool]:
+        """캡션 진행 막대: (칩, 칩 색, 글, [멈추기] 보임, [다시 만들기] 보임)."""
+        state, done, total, reason = self.caption_state
+        if state == "off":
+            return "캡션 꺼짐", "off", "켜면 그림 설명을 만들어 질의응답 근거로 씁니다.", False, False
+        if state == "paused":
+            return "캡션 멈춤", "bad", "API 키를 확인하세요. 키가 맞으면 다시 시작합니다.", False, False
+        if state == "making":
+            return "캡션 만드는 중", "warn", f"{done} / {total}", True, False
+        if state == "failed":
+            return "캡션 멈춤", "bad", f"캡션을 만들지 못했어요: {reason}", False, True
+        if state == "stopped":
+            return "캡션 멈춤", "warn", f"{done} / {total}", False, True
+        return "캡션 완료", "ok", "", False, True
+
     def on_action(self, key: str) -> None:
-        if key == "ask":
+        if key == "settings":
+            self.open_settings()
+        elif key == "ask":
             self.open_question()
         elif key == "read":
             self.session.toggle_read()
@@ -249,6 +559,11 @@ class Controller(QObject):
             self.pipeline.stop()
         if self.presynth is not None:
             self.presynth.close()
+        if self.caption_worker is not None:
+            self.caption_worker.close()
+        for w in (self.settings_window, self.script_window):
+            if w is not None:
+                w.close()
         self.session.shutdown()
         for close in self.closers:
             close()
@@ -303,8 +618,16 @@ def run(path: str | None = None) -> int:
         pipeline.on_cloud_failed = session.cloud_voice_failed
         pipeline.on_voice_chosen = session.cloud_voice_chosen
     controller = Controller(settings, session, pipeline, None, closers)
+    controller.invoker = invoker
     controller.presynth = Presynth(cache, invoker.wrap(controller.presynth_progress),
                                    invoker.wrap(controller.presynth_failed))
+
+    def caption_provider():
+        return make_provider(settings["provider"], settings["keys"][settings["provider"]])
+
+    controller.caption_worker = CaptionWorker(controller.caption_store, caption_provider,
+                                              invoker.wrap(controller.caption_progress),
+                                              invoker.wrap(controller.caption_failed))
     controller.start()
     if path:
         session.open_file(path)

@@ -108,6 +108,7 @@ class Session:
         self.ppt_state: PptState | None = None
         self.link_error = ""
         self.memory = Memory()
+        self.captions: dict[int, list[str]] = {}  # 장마다 그림 캡션(근거 묶음에 넣는다)
         self.answer: _Answer | None = None
         self._answer_seq = 0
         self.bubble = False  # 말풍선이 떠 있나. 떠 있는 동안 강아지는 그 자리에 머문다
@@ -282,7 +283,7 @@ class Session:
         if self.link is not None and self.ppt_state is not None and self.ppt_state.mode in ("show", "edit"):
             showing = self.ppt_state.index
         req = Request(self.settings["models"][provider], ans.effort, system_prompt(self.settings["persona"]),
-                      grounding(self.deck, self.edits) if self.deck is not None else "",
+                      grounding(self.deck, self.edits, self.captions) if self.deck is not None else "",
                       self.memory.turns(), question_text(q, showing))
         for after, line in WAIT_LINES:
             ans.timers.append(self.clock.call_later(after, lambda a=ans, t=line: self._wait_line(a, t)))

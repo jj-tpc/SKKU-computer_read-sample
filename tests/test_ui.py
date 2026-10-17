@@ -129,6 +129,7 @@ def test_dog_waits_when_cursor_over_orb(qtbot, controller, monkeypatch):
     center = controller.orb.orb_center_global()
     monkeypatch.setattr(app_mod.QCursor, "pos", staticmethod(lambda: center))
     for _ in range(90):
+        controller._last -= 1 / 30  # 프레임 사이가 1/30초 지난 것으로
         controller._frame()
     spot = app_mod.wait_spot((center.x(), center.y()), controller._area)
     assert controller.follower.pos == pytest.approx(spot, abs=3)
@@ -175,3 +176,80 @@ def test_bubble_streams_words(qtbot, controller):
     assert b.words == ["새", "답"]
     controller.session.on_bubble(False)
     assert not b.isVisible()
+
+
+# ---------------------------------------------------------------- 설정 창, 대본 창
+
+def test_first_run_opens_settings(qtbot, controller, app_home):
+    w = controller.settings_window
+    assert w is not None and w.isVisible() and w.windowTitle() == "설정 — PPT 읽어주기"
+    assert not Settings(app_home).first_run  # 처음 실행 표시를 저장했다
+    # 파일이 열려 있으니 아직 안 된 첫 카드(질의응답)만 펼친다
+    assert [c.is_open for c in w.cards] == [False, False, True, False]
+    assert w.hero_title.text() == "발표 준비 3 / 4" and w.cards[2].next_tag.isVisibleTo(w)
+
+
+def test_settings_save_at_once(qtbot, controller, app_home):
+    w = controller.settings_window
+    w.auto_toggle.click()
+    assert Settings(app_home)["auto_next"] is True and w.toast.isVisibleTo(w)  # 바로 저장하고 "저장됨"
+    w.provider_seg.buttons["openai"].click()
+    s = Settings(app_home)
+    assert s["provider"] == "openai" and w.qa_key.owner == "openai"
+    assert w.model_box.currentData() == "gpt-6-luna"
+    w.dog_cards["beagle"].click()
+    assert Settings(app_home)["dog"] == "beagle"
+    w.engine_seg.buttons["gemini"].click()
+    assert Settings(app_home)["voice_engine"] == "gemini" and not w.cloud_notice.isHidden()  # 키 확인 전 안내
+    assert w.engine_stack.currentIndex() == 2
+
+
+def test_key_check(qtbot, controller, app_home, monkeypatch):
+    from ppt_reader.llm.base import LLMError
+
+    class P:
+        def __init__(self, ok):
+            self.ok = ok
+
+        def check_key(self):
+            if not self.ok:
+                raise LLMError("key", "bad")
+
+    w = controller.settings_window
+    monkeypatch.setattr(app_mod, "make_provider", lambda owner, key: P(key == "good-key"))
+    w.qa_key.edit.setText("wrong-key")
+    w.qa_key.check()
+    qtbot.waitUntil(lambda: w.qa_key.result.text() == "✕ 키가 틀렸어요. 다시 확인하세요", timeout=3000)
+    assert Settings(app_home)["keys"]["claude"] == "wrong-key" and not Settings(app_home)["key_ok"]["claude"]
+    w.qa_key.edit.setText("good-key")
+    w.qa_key.check()
+    qtbot.waitUntil(lambda: w.qa_key.result.text() == "✓ 키가 맞아요", timeout=3000)
+    assert Settings(app_home)["key_ok"]["claude"] and w.hero_title.text() == "발표 준비 끝! 🎉"
+
+
+def test_script_window_edits(qtbot, controller):
+    controller.open_script_window()
+    sw = controller.script_window
+    assert sw.isVisible() and sw.windowTitle() == "대본 — sample_presentation.pptx" and len(sw.cards) == 6
+    sw.select(1, user=True)
+    assert sw.heading.text() == "2. 인공지능이란?" and sw.status.text().startswith("자동으로 뽑은 대본")
+    sw.editor.setPlainText("새로 고친 대본")
+    sw.select(2, user=True)  # 다른 장으로 가면 저장한다
+    assert controller.session.edits == {2: "새로 고친 대본"} and sw.cards[1].badges.startswith("✎")
+    sw.select(1, user=True)
+    assert sw.status.text().startswith("✎ 고친 대본") and sw.editor.toPlainText() == "새로 고친 대본"
+    sw.reset_edit()
+    assert controller.session.edits == {} and sw.status.text().startswith("자동으로 뽑은 대본")
+    controller.session.select(4)  # 쇼가 넘어가면 따라 고른다
+    assert sw.index == 4
+    assert sw.cap_chip.text() == "캡션 꺼짐"
+
+
+def test_caption_states(qtbot, controller):
+    controller.settings.set(captions=True)
+    controller.start_captions()
+    assert controller.caption_view()[0] == "캡션 멈춤"  # 키 확인 전
+    controller.caption_state = ("making", 2, 5, "")
+    assert controller.caption_view()[:3] == ("캡션 만드는 중", "warn", "2 / 5")
+    controller.caption_state = ("done", 5, 5, "")
+    assert controller.caption_view()[0] == "캡션 완료" and controller.caption_view()[4]
