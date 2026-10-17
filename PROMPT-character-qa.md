@@ -930,10 +930,10 @@ class Provider:
     4. `codesign --verify --deep --strict dist/PPTReader.app`
     5. `lipo -archs`로 arm64만 담겼는지 확인
     6. 화면 시험: pyobjc로 만든 가짜 전체 화면 앱 위에 앱을 띄우고, cliclick으로 커서를 움직이며 `screencapture -x`로 찍어 산출물로 올린다.
-    7. `ditto -c -k --keepParent dist/PPTReader.app PPTReader-macos-arm64.zip`으로 묶어 `actions/upload-artifact@v7`에 `archive: false`로 올린다.
+    7. 앱, `handoff/macos.txt`("먼저 읽어 주세요.txt"로), `licenses/`를 한 폴더에 담고 `ditto -c -k --keepParent`로 `PPTReader-macos-arm64.zip`을 묶어 `actions/upload-artifact@v7`에 `archive: false`로 올린다. 받는 사람에게 안내문이 함께 가야 해서 앱만 묶지 않는다.
 - **`ppt_reader.spec`**:
   - onedir를 유지한다. 그래야 Qt와 FFmpeg가 따로 된 라이브러리로 남아 바꿔 끼울 수 있다(LGPL).
-  - `ppt_reader/assets/*.png`를 넣는다.
+  - `ppt_reader/assets/*.png`와 `licenses/`를 넣는다(설정 창의 "오픈 소스 라이선스" 링크가 연다).
   - PySide6-Addons에 딸려 오는 가상 키보드 플러그인(`qtvirtualkeyboardplugin`, Qt Quick/Qml 따라옴, 약 16MB)을 빼 본다. 빼도 질문창 입력과 소리가 되는지 `--self-check`와 사람 확인으로 본다.
   - macOS `info_plist`는 기존 세 키를 유지한다.
 - **`licenses/`**: Qt(LGPLv3), PySide6, FFmpeg(LGPL-2.1+), anthropic, openai, google-genai, python-pptx, Pillow, pywin32, pyobjc의 라이선스 원문을 넣는다.

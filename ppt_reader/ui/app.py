@@ -300,9 +300,11 @@ class Controller(QObject):
             self.session.open_file(path)
 
     def open_licenses(self) -> None:
-        base = Path(sys.executable).parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parents[2]
-        for folder in (base / "licenses", base.parent / "Resources" / "licenses"):
-            if folder.is_dir():
+        """licenses 폴더를 연다. 실행 파일 안(PyInstaller가 푼 곳)과 저장소 루트 순서로 찾는다."""
+        roots = [Path(getattr(sys, "_MEIPASS", "")), Path(sys.executable).parent, Path(__file__).resolve().parents[2]]
+        for base in roots:
+            folder = base / "licenses"
+            if str(base) and folder.is_dir():
                 QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
                 return
 

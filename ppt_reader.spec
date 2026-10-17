@@ -9,7 +9,7 @@ from PyInstaller.utils.hooks import collect_data_files
 
 a = Analysis(
     ["main.py"],
-    datas=collect_data_files("pptx") + [("ppt_reader/assets/*.png", "ppt_reader/assets")],
+    datas=collect_data_files("pptx") + [("ppt_reader/assets/*.png", "ppt_reader/assets"), ("licenses/*", "licenses")],
     hiddenimports=["win32timezone"] if sys.platform == "win32" else [],
     excludes=["tkinter"],
 )

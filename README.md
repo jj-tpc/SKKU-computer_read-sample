@@ -1,128 +1,120 @@
 # PPT 읽어주기
 
-학생이 발표할 PPT를 띄워 두면, 컴퓨터가 슬라이드 내용(또는 발표자 노트)을 소리 내어 읽어 주는 프로그램입니다.
-**Windows와 macOS**에서 같은 코드로 동작하고, 운영체제에 들어 있는 음성을 쓰므로 **인터넷 없이** 읽습니다.
+교실 발표에서 컴퓨터가 "AI 발표자" 역할을 하는 프로그램입니다. 화면 위의 도트 강아지가 마우스 커서를 따라다니며 슬라이드 대본을 소리 내어 읽고, 발표가 끝나면 청중의 질문에 발표 자료를 근거로 답합니다.
+**Windows 10/11과 macOS 15 이상(Apple Silicon)**에서 같은 코드로 동작합니다.
 
 ## 할 수 있는 것
 
 | 기능 | 설명 |
 |---|---|
-| PPT 파일 읽기 | `.pptx` 파일을 열면 슬라이드별 대본이 만들어집니다. 제목 → 본문 → 표 순서로, 글상자는 위→아래, 왼쪽→오른쪽 순서로 읽습니다. |
-| 읽을 내용 선택 | 노트 우선(노트가 없으면 본문) / 슬라이드 본문 / 발표자 노트 / 본문+노트 |
-| 대본 고치기 | 오른쪽 칸에서 대본을 고치면 고친 대로 읽습니다. 예: `AI` → `에이아이`처럼 발음을 바로잡을 수 있습니다. |
-| **PowerPoint 연동** | PowerPoint에 띄워 둔 파일을 자동으로 불러오고, 슬라이드 쇼에서 장을 넘기면 그 장을 바로 읽습니다. |
-| **자동 발표** | 한 장을 다 읽으면 PowerPoint 슬라이드 쇼도 다음 장으로 넘기고 이어서 읽습니다. 숨긴 슬라이드는 건너뜁니다. |
-| 목소리·속도 | 설치된 음성 중에서 고르고, 0.5~2배속으로 조절합니다. 설정은 다음 실행 때도 유지됩니다. |
-| 출력 장치 | 스피커, 이어폰처럼 소리가 나올 장치를 고릅니다. **시스템 기본 장치**를 고르면 Windows/macOS 소리 설정의 기본 장치를 따라갑니다. 고른 이어폰의 연결이 끊겨 있으면 기본 장치로 읽고, 다시 연결되면 이어폰으로 읽습니다. |
+| 대본 읽기 | `.pptx`에서 슬라이드마다 대본을 만들어 읽습니다. 읽을 내용은 노트 우선 / 본문 / 노트 / 본문+노트 중에서 고릅니다. |
+| 대본 고치기 | 대본 창에서 고치면 고친 대로 읽습니다(예: `AI` → `에이아이`). 고친 대본은 다시 켜도 남습니다. |
+| PowerPoint 연동 | PowerPoint에 띄운 파일을 불러오고, 쇼에서 장을 넘기면 그 장을 읽습니다. |
+| 자동 발표 | 한 장을 다 읽으면 쇼도 다음 장으로 넘기고 이어 읽습니다. 숨긴 장은 건너뜁니다. |
+| 배속 | x1, x1.5, x2, x5. 음높이는 그대로입니다. |
+| 목소리 엔진 | 운영체제 음성(인터넷 없이), ElevenLabs, Gemini 중에서 고릅니다. 클라우드 음성이 실패하면 그 문장부터 운영체제 음성으로 이어 읽습니다. |
+| 질의응답 | 발표자가 청중의 질문을 입력하면 강아지가 자료를 먼저 근거로 삼아 목소리와 말풍선으로 답합니다. Claude, OpenAI, Gemini 중에서 고릅니다. |
+| 그림 캡션 | 켜 두면 슬라이드 속 그림 설명을 만들어 질의응답 근거로 씁니다(기본은 꺼짐). |
+
+## 화면
+
+- **강아지**: 커서 오른쪽 아래를 따라다닙니다. 읽는 동안 입이 목소리를 따라 움직이고, 질문을 받으면 생각하는 자세로 기다립니다. 클릭은 아래 화면으로 통과합니다.
+- **원 버튼**: 화면 오른쪽 아래의 코랄빛 원입니다. 누르면 위성 버튼 다섯 개가 펼쳐집니다.
+  - `?` 질문하기 · `▶/■` 읽기/정지 · `x1` 배속 · `⚙` 설정 · `✕` 끝내기
+- **질문창**: [질문하기]를 누르면 원 버튼 왼쪽에 열립니다. Enter로 보내고 Esc로 닫습니다. 위의 "생각 low/mid/high" 버튼으로 생각 깊이를 고릅니다.
+- **설정 창**: "발표 준비 n / 4"와 카드 네 장(발표 자료, 목소리, 질의응답, 캐릭터와 화면)이 있습니다. 바꾸면 바로 저장됩니다. 처음 켜면 저절로 열립니다.
+- **대본 창**: 설정 창의 [📝 대본 열기]로 엽니다. 슬라이드마다 대본, 발표자 노트, 그림 캡션을 보고 고칩니다.
+- **알림 줄**: 문제가 생기면 원 버튼 왼쪽 위에 6초 동안 원인과 할 일을 짧게 보입니다.
 
 ## 실행하기
 
-먼저 [Python 3.9 이상](https://www.python.org/downloads/)을 설치하세요. Windows에서는 설치할 때 **"Add python.exe to PATH"**를 체크합니다.
+### 실행 파일(권장)
+GitHub Actions에서 만든 zip을 받아 압축을 풀고 안의 "먼저 읽어 주세요.txt"를 따릅니다.
+- Windows: `PPTReader\PPTReader.exe`
+- macOS: `PPTReader.app`(서명이 없어 처음에 [그래도 열기]가 필요합니다)
 
-### Windows
-`run_windows.bat`을 더블클릭합니다. 처음 한 번은 필요한 패키지를 설치하느라 1~2분 걸립니다.
+### 소스로 실행
+[Python 3.10 이상](https://www.python.org/downloads/)이 필요합니다.
+- Windows: `run_windows.bat`을 두 번 누릅니다.
+- macOS: 터미널에서 `bash run_mac.sh`
+- 직접:
+  ```bash
+  python -m venv .venv
+  # Windows: .venv\Scripts\activate      macOS: source .venv/bin/activate
+  pip install -r requirements.txt
+  python main.py                                   # 강아지와 원 버튼
+  python main.py sample/sample_presentation.pptx   # 파일을 열면서
+  ```
 
-### macOS
-터미널에서 이 폴더로 이동해 실행합니다.
-```bash
-bash run_mac.sh
-```
-python.org에서 받은 Python을 권장합니다. Homebrew Python을 쓴다면 `brew install python-tk`가 필요합니다.
+## 질의응답 준비
 
-### 직접 실행 (두 운영체제 공통)
-```bash
-python -m venv .venv
-# Windows: .venv\Scripts\activate      macOS: source .venv/bin/activate
-pip install -r requirements.txt
-python main.py                                   # 화면 실행
-python main.py sample/sample_presentation.pptx   # 파일을 열면서 실행
-```
+1. 설정 창 › 질의응답에서 AI 제공자(Claude / OpenAI / Gemini)를 고릅니다.
+2. 그 회사의 API 키를 넣고 [확인]을 누릅니다. "✓ 키가 맞아요"가 나오면 됩니다.
+3. 필요하면 개인 지침(말투, 답 길이 등)을 적습니다. 모든 답에 반영됩니다.
 
-## 사용 방법
+키는 설정 파일에 그대로 저장됩니다. 함께 쓰는 컴퓨터라면 다 쓴 뒤 지우세요.
 
-### 1) 파일만 열어서 읽기
-1. **[파일 열기...]**로 `.pptx`를 고릅니다. (시연용 예제: `sample/sample_presentation.pptx`)
-2. 왼쪽 목록에서 슬라이드를 고르고 **[▶ 읽기]** 또는 **스페이스바**를 누릅니다.
-3. 끝까지 쭉 읽게 하려면 **[⚙ 설정]**에서 **[다 읽으면 다음 장으로 넘어가기]**를 켜고 **[적용]**을 누릅니다.
+## 클라우드 음성(선택)
 
-### 2) PowerPoint에 띄워 놓고 읽기 (연동)
-1. PowerPoint에서 발표 파일을 열어 둡니다. 저장된 파일이어야 합니다.
-2. 이 프로그램에서 **[PowerPoint 연동]**을 켜면 PowerPoint에 열린 파일을 자동으로 불러옵니다.
-3. 슬라이드 쇼(F5)를 시작하면 첫 장부터 읽습니다. 발표자가 장을 넘기면 그 장을 바로 읽습니다.
-4. **[⚙ 설정]**에서 **[다 읽으면 다음 장으로 넘어가기]**까지 켜면 프로그램이 읽고 넘기기를 반복합니다. 발표자 없이 진행되는 **자동 발표**입니다.
-5. 슬라이드 쇼를 끝내면 읽기도 멈춥니다. 쇼 중에 이 프로그램 창이 가려지면 **[항상 위]**를 켜 두세요.
+설정 창 › 목소리 › 목소리 엔진에서 ElevenLabs나 Gemini를 고르고 키를 확인하면 그 목소리로 대본과 답을 읽습니다.
+- 파일을 열면 대본 소리를 뒤에서 미리 만들어 둡니다(진행은 목소리 카드에 보입니다). 다 만든 뒤에는 인터넷이 끊겨도 대본을 읽습니다.
+- Gemini 음성은 질의응답의 Gemini 키를 함께 씁니다.
+- ElevenLabs 무료 등급은 한 달에 약 1만 자라서, 노트가 긴 발표는 미리 만들기만으로 다 쓸 수 있습니다.
 
-PowerPoint에서 내용을 고치고 **저장**하면 다음에 장이 바뀔 때 자동으로 다시 불러옵니다. 저장하지 않은 변경은 반영되지 않습니다.
+## 한국어 음성 설치(운영체제 음성)
 
-### 3) 설정 바꾸기
-오른쪽 위 **[⚙ 설정]**을 누르면 같은 창이 설정 화면으로 바뀝니다. 읽을 내용, 목소리, 출력 장치, 자동 발표, 쇼에서 장을 넘기면 바로 읽기를 고른 뒤 파란 **[적용]**을 누르세요. **[취소]**를 누르면 아무것도 바뀌지 않고 돌아갑니다. 속도는 발표 중에도 바로 바꿀 수 있게 메인 화면 아래쪽에 있습니다.
-
-### 단축키
-| 키 | 동작 |
-|---|---|
-| 스페이스바 / F5 | 읽기 / 정지 (대본 칸에서 글을 쓸 때는 제외) |
-| Esc | 정지 (설정 화면에서는 취소) |
-| Enter | 설정 화면에서 적용 |
-| Page Up / Page Down | 이전 / 다음 슬라이드 |
-
-## 한국어 음성 설치
-
-목소리 목록에 한국어 음성이 없으면 영어 음성으로 읽게 됩니다.
-
-- **Windows**: 설정 → 시간 및 언어 → 음성 → **음성 추가** → 한국어. 한국어판 Windows에는 `Microsoft Heami`가 기본으로 들어 있습니다.
-- **macOS**: 시스템 설정 → 손쉬운 사용 → 읽기 및 말하기 → 시스템 음성 옆 **(i)** 또는 '음성 관리' → 한국어 **Yuna** 등을 내려받습니다.
-
-설치한 뒤 프로그램을 다시 실행하세요.
-
-## macOS 권한 (PowerPoint 연동 시)
-
-연동을 처음 켜면 *"…이(가) 'Microsoft PowerPoint'를 제어하려고 합니다"* 창이 뜹니다. **허용**을 누르세요.
-실수로 거부했다면 **시스템 설정 → 개인정보 보호 및 보안 → 자동화**에서 터미널(또는 PPTReader)의 Microsoft PowerPoint 항목을 켭니다.
-
-## 실행 파일 만들기 (Python 없는 컴퓨터에 나눠 줄 때)
-
-Windows용은 Windows에서, Mac용은 Mac에서 각각 빌드합니다.
-```bash
-pip install pyinstaller
-pyinstaller ppt_reader.spec
-```
-- Windows: `dist/PPTReader/` 폴더 전체를 압축해서 나눠 주고, 받은 사람은 `PPTReader.exe`를 실행합니다.
-- macOS: `dist/PPTReader.app`이 만들어집니다. 서명하지 않은 앱이라 처음 열 때 **오른쪽 클릭 → 열기**로 실행해야 합니다.
+- **Windows**: 설정 → 시간 및 언어 → 음성 → 음성 추가 → 한국어. 한국어판 Windows에는 `Microsoft Heami`가 있습니다.
+- **macOS**: 시스템 설정 → 손쉬운 사용 → 읽기 및 말하기 → 시스템 음성 → 음성 관리 → 한국어(Yuna 등).
 
 ## 문제 해결
 
 | 증상 | 해결 |
 |---|---|
-| 소리가 안 남 | **[⚙ 설정]**의 목소리 목록에서 다른 음성을 골라 보세요. 출력 장치와 음량도 확인합니다. |
-| 블루투스 이어폰에서 첫마디가 잘림 | 블루투스 이어폰은 소리가 한동안 없으면 쉬었다가, 깨어나는 동안 첫마디를 버립니다. 그래서 이 프로그램은 2초 넘게 조용했다가 읽기 시작할 때 앞에 1초 무음을 넣습니다. 자동 발표처럼 바로 이어 읽을 때는 넣지 않습니다. |
-| 이어폰을 꽂았는데 스피커로 나옴 | **[⚙ 설정] → 출력 장치**에서 이어폰을 직접 고르고 **[적용]**을 누르세요. 목록을 펼 때마다 새로 연결된 장치를 다시 찾습니다. Windows에서 이어폰이 '기본 통신 장치'로만 잡혀 있으면 '시스템 기본 장치'는 여전히 스피커입니다. `python main.py --list-outputs`에서 `*`가 붙은 장치가 지금 기본 장치입니다. |
-| 연동했는데 "파일 위치를 알 수 없습니다" | PowerPoint 파일을 먼저 저장하세요. OneDrive 파일이 동기화 폴더에 없을 때도 이 문구가 뜹니다. 이때는 **[파일 열기]**로 같은 파일을 직접 열면 이름으로 맞춰서 따라갑니다. |
-| `.ppt` 파일이 안 열림 | 예전 형식입니다. PowerPoint에서 **다른 이름으로 저장 → .pptx**로 바꿔 주세요. |
-| 연동 상태를 확인하고 싶음 | `python main.py --probe-ppt`를 실행하면 PowerPoint가 알려 주는 현재 상태가 출력됩니다. |
+| 소리가 안 남 | 설정 › 목소리에서 다른 음성이나 출력 장치를 고르고 [들어 보기]를 누릅니다. |
+| 블루투스 이어폰 첫마디가 잘림 | 2초 넘게 조용했다가 읽기 시작할 때 앞에 1초 무음을 넣어 둡니다(배속과 상관없이 1초). |
+| 이어폰을 꽂았는데 스피커로 나옴 | 설정 › 출력 장치에서 이어폰을 직접 고릅니다. 목록을 펼 때마다 장치를 다시 찾습니다. |
+| "API 키가 없거나 틀렸어요" | 설정 › 질의응답에서 키를 다시 넣고 [확인]을 누릅니다. |
+| "답이 늦어요" | 질문창 위의 생각 깊이를 low로 낮춥니다. |
+| 연동했는데 "파일 위치를 알 수 없습니다" | PowerPoint 파일을 먼저 저장합니다. OneDrive 파일은 동기화 폴더에 있어야 합니다. |
+| `.ppt` 파일이 안 열림 | PowerPoint에서 다른 이름으로 저장 → `.pptx`로 바꿉니다. |
+| macOS에서 쇼 위에 안 보임 | 터미널에서 `PPTReader.app/Contents/MacOS/PPTReader --self-check`를 실행해 "macOS 보조" 줄이 OK인지 봅니다. |
 
-명령줄 도구도 있습니다.
+명령줄 도구(화면 없이 돕니다):
 ```bash
-python main.py --list-voices                       # 쓸 수 있는 음성 목록 (* = 한국어)
+python main.py --list-voices                       # 운영체제 음성 목록 (* = 한국어)
 python main.py --list-outputs                      # 출력 장치 목록 (* = 지금 기본 장치)
 python main.py --dump 발표.pptx                    # 슬라이드별 대본 출력 (소리 없음)
-python main.py --say 발표.pptx --slide 2 --speed 1.2   # 화면 없이 바로 읽기
-python main.py --say 발표.pptx --output 헤드폰        # 이름에 '헤드폰'이 들어간 장치로 읽기
+python main.py --say 발표.pptx --slide 2 --speed 1.5   # 화면 없이 읽기 (배속 1.0·1.5·2.0·5.0)
+python main.py --probe-ppt                         # PowerPoint 연동 상태 확인
 ```
+
+## 빌드와 시험
+
+- 자동 시험: `pip install -r requirements-dev.txt` 뒤 `python -m pytest -q tests` (화면·인터넷·소리 없이 돕니다).
+  실제 API 시험은 `PPT_READER_LIVE_CLAUDE`, `PPT_READER_LIVE_OPENAI`, `PPT_READER_LIVE_GEMINI`, `PPT_READER_LIVE_ELEVENLABS`에 키를 넣었을 때만 돕니다.
+- 실행 파일: GitHub Actions의 `build` 워크플로를 손으로 돌립니다(`gh workflow run build.yml --ref <브랜치>`). Windows판과 macOS판(Apple Silicon)을 함께 만들고, `--self-check`, 서명·arm64 검사, 가짜 전체 화면 위 화면 시험을 합니다.
+- 로컬 빌드: `pyinstaller --noconfirm ppt_reader.spec` (Windows는 Windows에서).
 
 ## 구조
 
 ```
-main.py                 시작점 (python main.py)
+main.py                 시작점
 ppt_reader/
-  app.py                화면(tkinter): 슬라이드 목록, 대본 편집, 읽기 제어, 연동 처리
-  slides.py             .pptx에서 제목·본문·표·발표자 노트 추출, 읽기 좋게 다듬기
-  tts.py                음성 합성과 출력 장치 선택: Windows = SAPI(pywin32), macOS = say 명령
-  link.py               PowerPoint 연동: Windows = COM, macOS = AppleScript(osascript)
-  __main__.py           명령줄 옵션(--dump, --say, --list-voices, --probe-ppt)
-tools/make_sample.py    예제 발표 자료 생성
-tests/                  자동 테스트 (python -m pytest)
-ppt_reader.spec         실행 파일 빌드 설정 (PyInstaller)
+  __main__.py           명령줄. 옵션이 없으면 Qt 화면, --self-check
+  session.py            상태 묶음: 읽기, 자동 발표, PowerPoint 따라가기, 질의응답 (Qt를 모름)
+  settings.py           설정 파일, 고친 대본, 옛 설정 옮기기
+  slides.py, link.py    대본 뽑기, PowerPoint 연동
+  follow.py             강아지 따라가기 계산
+  qa.py                 근거 묶음, 지침, 대화 기억, 문장 자르기
+  captions.py           그림 꺼내기와 캡션
+  voice/                합성(운영체제·클라우드), 신호, 재생, 문장 줄, 저장
+  llm/                  Claude·OpenAI·Gemini 어댑터
+  ui/                   Qt 화면: 강아지, 원 버튼, 말풍선, 설정 창, 대본 창
+  assets/               강아지 스프라이트
+tools/                  스프라이트 생성기, 예제 자료, macOS 화면 시험
+licenses/               오픈 소스 라이선스
+handoff/                받는 사람용 안내문
 ```
 
-음성 재생과 PowerPoint 확인은 각각 별도 스레드에서 돌아가므로, 읽는 동안에도 화면이 멈추지 않습니다.
-PowerPoint 상태는 Windows에서 0.4초, macOS에서 0.7초마다 확인합니다.
+설정·고친 대본·캡션·대본 소리는 운영체제 앱 폴더에 저장됩니다(Windows `%APPDATA%\PPT읽어주기`, macOS `~/Library/Application Support/PPT읽어주기`).
+자세한 명세는 `PROMPT-character-qa.md`(이번 판), `PROMPT.md`(v1.0)에 있습니다.
