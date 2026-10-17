@@ -12,14 +12,16 @@ from PySide6.QtGui import QCursor, QGuiApplication, QScreen
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from ..follow import Area, Follower, wait_spot
+from ..llm.base import make_provider, start_stream
 from ..session import READING, SPEAKING, THINKING, Session
 from ..settings import DOGS, Settings, app_folder
 from ..slides import to_speech
 from ..voice.cache import sentence_plan
 from ..voice.cloud import cloud_engine
 from . import platform_mac, platform_win, theme
+from .bubble import BubbleWindow
 from .dog import FRAMES, SWEAT_ROW, DogWindow, load_sheet
-from .orb import OrbWindow, corner_center
+from .orb import OrbWindow, QuestionWindow, corner_center
 from .qtcore import MainThreadInvoker, QtClock
 
 APP_TITLE = "PPT 읽어주기"
@@ -55,6 +57,9 @@ class Controller(QObject):
         self.dog = DogWindow(settings["dog"])
         self.orb = OrbWindow(self.on_action)
         self.orb.set_speed(settings["speed"])
+        self.question = QuestionWindow(self._send_question, self._question_closed)
+        self.bubble = BubbleWindow()
+        self._bubble_text = ""
         self.follower = Follower()
         self._screen_now: QScreen | None = None
         self._area = Area(0, 0, 1, 1)
@@ -70,6 +75,11 @@ class Controller(QObject):
         session.on_pose = self._on_pose
         session.on_message = self._on_message
         session.on_notice = self.orb.notify
+        session.on_shake = self.orb.shake
+        session.on_bubble = self._on_bubble
+        session.on_question = self._on_question
+        if pipeline is not None:
+            pipeline.on_started = session.voice_started
         session.on_deck = lambda _deck: self.start_presynth()
         session.on_script = self._on_script
 
@@ -116,8 +126,10 @@ class Controller(QObject):
         speaking = frame is not None and frame.speaking
         state = self.session.state
         orb = self.orb.orb_center_global()
-        base = self.follower.update(now, dt, (cursor.x(), cursor.y()), self._area, (orb.x(), orb.y()),
-                                    self.orb.is_over(cursor), stay=state in (THINKING, SPEAKING))
+        over = self.orb.is_over(cursor) or (self.question.isVisible() and self.question.geometry().contains(cursor))
+        # 질의응답 중과 말풍선이 떠 있는 동안은 그 자리에 머문다. 말풍선이 사라지면 다시 커서에게 간다
+        stay = state in (THINKING, SPEAKING) or self.session.bubble
+        base = self.follower.update(now, dt, (cursor.x(), cursor.y()), self._area, (orb.x(), orb.y()), over, stay)
         if now < self._happy_until:
             pose = "happy"
         elif state == THINKING:
@@ -129,8 +141,17 @@ class Controller(QObject):
         self.dog.set_pose(pose)
         if speaking:
             self.dog.mouth = frame.mouth
+        self.dog.sweat = self.session.sweat
         self.dog.facing_left = self.follower.facing_left
         self.dog.move(*map(round, self.follower.pos))
+        if self.session.bubble:
+            if speaking:  # 목소리가 읽기 시작한 낱말까지, 앞 문장들에 이어서
+                said = " ".join(frame.text.split()[:frame.words])
+                self._bubble_text = f"{frame.before} {said}".strip()
+            self.bubble.set_text(self._bubble_text)
+            self.bubble.place(*self.follower.pos, self._area)
+        self.bubble.tick(dt)
+        self.question.tick(dt)
         level, tone = (frame.level, frame.tone) if speaking else (0.0, 0.5)
         self.orb.level += (level - self.orb.level) * 0.35
         self.orb.tone += (tone - self.orb.tone) * 0.05  # 높낮이 느낌은 천천히 따라간다
@@ -181,8 +202,37 @@ class Controller(QObject):
         elif kind == "warning":
             QMessageBox.warning(None, APP_TITLE, text)
 
+    # ------------------------------------------------------------ 질의응답
+
+    def open_question(self) -> None:
+        if not self.question.isVisible():
+            self._question_from = platform_win.foreground_window()  # 닫을 때 쇼에 포커스를 돌려준다
+        self.question.place(self.orb.orb_center_global())
+        self.orb.question_open = True
+        self.question.open()
+
+    def _send_question(self, text: str, effort: str) -> None:
+        self.session.ask(text, effort)
+
+    def _question_closed(self) -> None:
+        self.orb.question_open = False
+        platform_win.restore_foreground(getattr(self, "_question_from", 0))
+
+    def _on_question(self, text: str) -> None:
+        self.question.set_text(text)  # ""면 비우고(답을 다 함), 글이면 다시 채운다(오류)
+
+    def _on_bubble(self, visible: bool) -> None:
+        if visible:
+            self._bubble_text = ""
+            self.bubble.begin()
+            self.bubble.place(*self.follower.pos, self._area)
+        else:
+            self.bubble.hide()
+
     def on_action(self, key: str) -> None:
-        if key == "read":
+        if key == "ask":
+            self.open_question()
+        elif key == "read":
             self.session.toggle_read()
         elif key == "speed":
             self.orb.set_speed(self.session.cycle_speed())
@@ -202,6 +252,8 @@ class Controller(QObject):
             close()
         self.dog.close()
         self.orb.close()
+        self.question.close()
+        self.bubble.close()
         QApplication.quit()
 
 
@@ -238,7 +290,11 @@ def run(path: str | None = None) -> int:
     def link_factory(on_change, on_error):
         return PowerPointLink(invoker.wrap(on_change), invoker.wrap(on_error))
 
-    session = Session(settings, pipeline, QtClock(), link_factory)
+    def llm_start(provider, key, req, on_chunk, on_done, on_error):
+        return start_stream(lambda: make_provider(provider, key), req, invoker.wrap(on_chunk),
+                            invoker.wrap(on_done), invoker.wrap(on_error))
+
+    session = Session(settings, pipeline, QtClock(), link_factory, llm_start=llm_start)
     if pipeline is not None:
         pipeline.on_done = session.voice_done
         pipeline.on_error = session.voice_error

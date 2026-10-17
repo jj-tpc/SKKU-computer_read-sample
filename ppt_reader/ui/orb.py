@@ -1,4 +1,4 @@
-"""원 버튼 묶음 창: 원 버튼(코랄 C 음파 링), 위성 버튼 다섯 개, 알림 줄.
+"""원 버튼 묶음: 원 버튼(코랄 C 음파 링), 위성 버튼 다섯 개, 알림 줄, 질문창과 생각 깊이 버튼.
 
 창 하나에 함께 그리고, 버튼 자리에만 마스크를 건다. 마스크 밖(투명한 곳)의 클릭은 아래 쇼로 간다.
 """
@@ -11,9 +11,9 @@ from typing import Callable
 from PySide6.QtCore import QPoint, QPointF, QRect, QRectF, Qt
 from PySide6.QtGui import (QColor, QFont, QFontMetrics, QLinearGradient, QPainter, QPainterPath, QPen, QPolygonF,
                            QRadialGradient, QRegion)
-from PySide6.QtWidgets import QToolTip
+from PySide6.QtWidgets import QLineEdit, QToolTip, QWidget
 
-from . import theme
+from . import platform_mac, theme
 from .overlay import OverlayWindow
 
 R = 28  # 원 버튼 반지름
@@ -400,3 +400,165 @@ def _gear(c: QPointF, r: float) -> QPainterPath:
 
 def _dist(a: QPointF, b: QPointF) -> float:
     return math.hypot(a.x() - b.x(), a.y() - b.y())
+
+
+# ---------------------------------------------------------------- 질문창과 생각 깊이 버튼
+
+Q_W, Q_H = 360, 48  # 질문창(알약)
+Q_GAP = 30  # 원 버튼 왼쪽 가장자리와 질문창 오른쪽 끝 사이
+PILL_H, PILL_GAP = 32, 10  # 생각 깊이 버튼: 질문창 위 10px
+Q_MARGIN = 16  # 그림자 자리
+SEND_D = 36
+FLIP = 0.32
+EFFORTS = ("low", "mid", "high")
+DOTS = {"low": "●○○", "mid": "●●○", "high": "●●●"}
+
+
+class QuestionWindow(QWidget):
+    """질문창(알약)과 생각 깊이 버튼. 원 버튼 묶음 중 이 창만 포커스를 받는다(글을 입력해야 하므로).
+
+    생각 깊이는 켤 때마다 low로 시작하고 저장하지 않는다.
+    """
+
+    def __init__(self, on_send: Callable[[str, str], None], on_close: Callable[[], None]):
+        super().__init__(None, Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint
+                         | Qt.WindowType.Tool)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAttribute(Qt.WidgetAttribute.WA_MacAlwaysShowToolWindow)
+        self.on_send = on_send
+        self.on_close = on_close
+        self.effort = "low"
+        self._flip_at = -1e9
+        self._shown_effort = "low"
+        self._t = 0.0
+        self.resize(Q_W + 2 * Q_MARGIN, PILL_H + PILL_GAP + Q_H + 2 * Q_MARGIN)
+        self.edit = QLineEdit(self)
+        self.edit.setPlaceholderText("청중의 질문을 입력하세요")
+        self.edit.setFrame(False)
+        font = QFont(theme.FONT_FAMILY)
+        font.setPixelSize(15)
+        self.edit.setFont(font)
+        self.edit.setStyleSheet(f"QLineEdit {{ background: transparent; color: {theme.OCEAN_800}; border: none; }}")
+        bar = self._bar()
+        self.edit.setGeometry(int(bar.x() + 20), int(bar.y() + 8), int(bar.width() - 20 - SEND_D - 14), int(bar.height() - 16))
+        self.edit.returnPressed.connect(self.send)
+        self._pill_font = QFont(theme.FONT_FAMILY)
+        self._pill_font.setPixelSize(13)
+        self._pill_font.setBold(True)
+        self.setMask(QRegion(self._bar().toAlignedRect().adjusted(-6, -4, 6, 10))
+                     .united(QRegion(self._pill().toAlignedRect().adjusted(-6, -4, 6, 8))))
+
+    # ------------------------------------------------------------ 자리
+
+    def _bar(self) -> QRectF:
+        return QRectF(Q_MARGIN, Q_MARGIN + PILL_H + PILL_GAP, Q_W, Q_H)
+
+    def _send_rect(self) -> QRectF:
+        bar = self._bar()
+        return QRectF(bar.right() - 6 - SEND_D, bar.y() + (Q_H - SEND_D) / 2, SEND_D, SEND_D)
+
+    def _pill(self) -> QRectF:
+        fm = QFontMetrics(self._pill_font)
+        w = fm.horizontalAdvance(f"생각 {self._shown_effort} {DOTS[self._shown_effort]}") + 28
+        bar = self._bar()
+        return QRectF(bar.right() - 4 - w, Q_MARGIN, w, PILL_H)
+
+    def place(self, orb_center: QPoint) -> None:
+        """오른쪽 끝이 원 버튼 왼쪽 가장자리에서 30px, 세로 가운데가 원 버튼 중심과 같다."""
+        right = orb_center.x() - R - Q_GAP
+        self.move(int(right - Q_W - Q_MARGIN), int(orb_center.y() - Q_H / 2 - Q_MARGIN - PILL_H - PILL_GAP))
+
+    # ------------------------------------------------------------ 바깥에서 부르기
+
+    def open(self) -> None:
+        self.show()
+        self.raise_()
+        if not platform_mac.make_key(self):
+            self.activateWindow()
+        self.edit.setFocus()
+
+    def close_box(self) -> None:
+        self.hide()
+        self.on_close()
+
+    def set_text(self, text: str) -> None:
+        self.edit.setText(text)
+
+    def send(self) -> None:
+        text = self.edit.text().strip()
+        if text:  # 빈 글은 보내지 않는다. 보낸 뒤에도 창은 남고, 성공하면 session이 글을 비운다
+            self.on_send(text, self.effort)
+
+    def tick(self, dt: float) -> None:
+        self._t += dt
+        e = self._t - self._flip_at
+        if 0 <= e < FLIP:
+            if e >= FLIP / 2 and self._shown_effort != self.effort:
+                self._shown_effort = self.effort
+            self.update()
+
+    # ------------------------------------------------------------ 입력
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Escape:
+            self.close_box()
+            return
+        super().keyPressEvent(event)
+
+    def mousePressEvent(self, event):
+        pos = event.position()
+        if self._send_rect().contains(pos):
+            self.send()
+        elif self._pill().contains(pos):
+            self.effort = EFFORTS[(EFFORTS.index(self.effort) + 1) % len(EFFORTS)]
+            self._flip_at = self._t  # 글자가 0.32초 동안 위아래로 뒤집힌다
+            self.update()
+        else:
+            super().mousePressEvent(event)
+
+    # ------------------------------------------------------------ 그리기
+
+    def paintEvent(self, _event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        bar = self._bar()
+        for i in range(5, 0, -1):  # 그림자 0 6px 20px rgba(0,0,0,.2)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QColor(0, 0, 0, int(51 / 5 * (6 - i) / 3)))
+            r = bar.adjusted(-i * 2, 6 - i * 2, i * 2, 6 + i * 2)
+            p.drawRoundedRect(r, r.height() / 2, r.height() / 2)
+        p.setBrush(QColor("white"))
+        p.setPen(QPen(QColor(theme.CORAL), 2))
+        p.drawRoundedRect(bar, Q_H / 2, Q_H / 2)
+        send = self._send_rect()
+        grad = QLinearGradient(send.topLeft(), send.bottomRight())
+        for stop, color in theme.CORAL_STOPS:
+            grad.setColorAt(stop, QColor(color))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(grad)
+        p.drawEllipse(send)
+        arrow = QFont(theme.FONT_FAMILY)
+        arrow.setPixelSize(18)
+        arrow.setBold(True)
+        p.setFont(arrow)
+        p.setPen(QColor("white"))
+        p.drawText(send, Qt.AlignmentFlag.AlignCenter, "↑")
+        self._paint_pill(p)
+        p.end()
+
+    def _paint_pill(self, p: QPainter) -> None:
+        pill = self._pill()
+        p.setPen(QPen(QColor(255, 111, 97, 110), 1))
+        p.setBrush(QColor("white"))
+        p.drawRoundedRect(pill, PILL_H / 2, PILL_H / 2)
+        e = self._t - self._flip_at
+        p.save()
+        if 0 <= e < FLIP:
+            sy = abs(math.cos(math.pi * e / FLIP))
+            p.translate(pill.center())
+            p.scale(1.0, max(0.05, sy))
+            p.translate(-pill.center())
+        p.setFont(self._pill_font)
+        p.setPen(QColor(theme.SATELLITE_GLYPH))
+        p.drawText(pill, Qt.AlignmentFlag.AlignCenter, f"생각 {self._shown_effort} {DOTS[self._shown_effort]}")
+        p.restore()

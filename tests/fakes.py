@@ -67,3 +67,39 @@ class FakeClock:
             self.t = first.at
             first.fn()
         self.t = end
+
+
+class FakeAnswerVoice(FakeVoice):
+    """답 문장도 받는 가짜 음성(Pipeline의 begin_answer/add_sentence/end_answer)."""
+
+    def __init__(self):
+        super().__init__()
+        self.answers = []  # {"tag", "sentences", "ended"}
+
+    def begin_answer(self, tag, voice_id, speed, output_id):
+        self.answers.append({"tag": tag, "sentences": [], "ended": False})
+
+    def add_sentence(self, text):
+        self.answers[-1]["sentences"].append(text)
+
+    def end_answer(self):
+        self.answers[-1]["ended"] = True
+
+
+class FakeLLM:
+    """session.llm_start 자리. 받은 요청과 콜백을 남겨 두고, 시험이 글 조각을 직접 흘려 보낸다."""
+
+    def __init__(self):
+        self.calls = []  # (provider, key, request, cancel)
+
+    def __call__(self, provider, key, req, on_chunk, on_done, on_error):
+        import threading
+
+        cancel = threading.Event()
+        self.calls.append({"provider": provider, "key": key, "req": req, "cancel": cancel,
+                           "chunk": on_chunk, "done": on_done, "error": on_error})
+        return cancel
+
+    @property
+    def last(self):
+        return self.calls[-1]

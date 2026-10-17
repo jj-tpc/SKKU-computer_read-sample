@@ -110,6 +110,7 @@ class Frame:
     words: int = 0  # 지금 문장에서 읽기 시작한 낱말 수
     sentence: int = -1
     text: str = ""
+    before: str = ""  # 이 답(장)에서 앞서 말한 문장들. 말풍선은 문장이 바뀌어도 글을 이어 보인다
 
 
 @dataclass
@@ -138,6 +139,7 @@ class Pipeline:
         self.on_error: Callable[[object, str], None] = _noop  # (tag, 문구) 운영체제 음성도 실패
         self.on_cloud_failed: Callable[[str, str], None] = _noop  # (제공자, 오류 종류)
         self.on_voice_chosen: Callable[[str, object], None] = _noop  # (제공자, 목소리)
+        self.on_started: Callable[[object, int], None] = _noop  # (tag, 문장 번호) 그 문장의 재생을 시작함
         player.on_finished = self._played
         player.on_failed = self._play_failed
 
@@ -186,8 +188,9 @@ class Pipeline:
         t = self.player.position()
         level = value_at(p.levels, t)
         mouth = self.hold.update(mouth_shape(level, syllable_at(p.events, t)), self.now())
+        before = " ".join(item[1] for item in job.items[:job.play_index])
         return Frame(True, level, value_at(p.tones, t), mouth, words_started(p.synth.words, t),
-                     job.play_index, p.text)
+                     job.play_index, p.text, before)
 
     def close(self) -> None:
         self.stop()
@@ -279,6 +282,7 @@ class Pipeline:
             levels, tones = curves(synth.pcm, synth.rate)
             self.playing = _Playing(synth, text, levels, tones, syllable_events(text, synth.words, synth.seconds))
             self.player.play(synth, job.speed, job.output_id)
+            self.on_started(job.tag, nxt)
             self._request_more()
         elif job.closed and nxt >= len(job.items):
             self._finish(job, True)

@@ -511,3 +511,19 @@ def test_pipeline_frame(tmp_path):
     f = p.frame()
     assert f.speaking and f.level > 0.5 and f.text == "이 문장." and f.sentence == 0
     assert f.mouth == signal.WIDE and f.words == 1  # '이'는 가로 입
+
+
+@pytest.mark.live
+@pytest.mark.parametrize("provider, env", [("elevenlabs", "PPT_READER_LIVE_ELEVENLABS"),
+                                           ("gemini", "PPT_READER_LIVE_GEMINI")])
+def test_live_cloud_voice(provider, env):
+    key = os.environ.get(env)
+    if not key:
+        pytest.skip(f"{env}에 키가 없음")
+    if provider == "elevenlabs":
+        eng = ElevenLabsEngine(key, "eleven_multilingual_v2")
+        eng.check_key()
+    else:
+        eng = GeminiVoiceEngine(key, "gemini-3.8-flash-tts", "Kore")
+    synth = eng.synth("안녕하세요. 시험입니다.", None, 1.0)
+    assert synth.seconds > 0.5 and synth.words and synth.engine_speed == 1.0

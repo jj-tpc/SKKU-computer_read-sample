@@ -136,6 +136,20 @@ def run(app_path: str, out_dir: str) -> int:
         cliclick(f"m:{x - 200},{y - 300}")
         time.sleep(5)  # 위성 버튼이 4초 뒤 접히는지
         shot(out, "04_collapsed")
+
+        # 질문창: 쇼를 활성 앱으로 둔 채 이 창만 키 입력을 받아야 한다
+        cliclick(f"c:{x},{y}")
+        time.sleep(1)
+        cliclick(f"c:{x - 132},{y}")  # 위성 버튼 1번 [질문하기]
+        time.sleep(1)
+        cliclick("t:hello")
+        time.sleep(1)
+        shot(out, "05_question_typed")
+        typed_front = frontmost()
+        note(f"{'OK  ' if typed_front == show_front else 'WARN'} 질문창에 글을 친 뒤 맨 앞 앱: {typed_front}")
+        cliclick("kp:esc")
+        time.sleep(1)
+        shot(out, "06_question_closed")
     finally:
         app.terminate()
         show.terminate()

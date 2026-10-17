@@ -63,6 +63,21 @@ def float_over_fullscreen(widget) -> bool:
         return False
 
 
+def make_key(widget) -> bool:
+    """질문창을 열 때: 쇼(PowerPoint)를 활성 앱으로 둔 채 이 창만 키 입력을 받게 한다(Spotlight처럼).
+
+    Qt의 activateWindow()는 앱 자체를 활성화해서 전체 화면 쇼를 흔들 수 있다. 창을 닫으면 키 입력은 쇼로 돌아간다.
+    """
+    if not _cocoa():
+        return False
+    try:
+        float_over_fullscreen(widget)
+        _ns_window(widget).makeKeyAndOrderFront_(None)
+        return True
+    except Exception:
+        return False
+
+
 def check(widget) -> tuple[bool, str]:
     """--self-check용: 보조가 실제 NSWindow에 적용됐는지 읽어서 확인한다."""
     if sys.platform != "darwin":

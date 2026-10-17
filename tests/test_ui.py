@@ -133,3 +133,45 @@ def test_dog_waits_when_cursor_over_orb(qtbot, controller, monkeypatch):
     spot = app_mod.wait_spot((center.x(), center.y()), controller._area)
     assert controller.follower.pos == pytest.approx(spot, abs=3)
     assert controller.dog.pos().x() == pytest.approx(spot[0], abs=3)
+
+
+def test_question_window_sends_and_cycles_effort(qtbot, controller):
+    from fakes import FakeLLM
+
+    llm = FakeLLM()
+    controller.session.llm_start = llm
+    controller.settings.set_for("keys", "claude", "k")
+    open_satellites(qtbot, controller.orb)
+    click(qtbot, controller.orb, controller.orb._target(0))  # [질문하기]
+    q = controller.question
+    assert q.isVisible() and not controller.orb.is_open and controller.orb.question_open
+    pill = q._pill().center().toPoint()
+    for expected in ("mid", "high", "low", "mid"):
+        qtbot.mouseClick(q, Qt.MouseButton.LeftButton, pos=pill)
+        assert q.effort == expected
+    qtbot.keyClick(q.edit, Qt.Key.Key_Return)  # 빈 글은 보내지 않는다
+    assert llm.calls == []
+    q.edit.setText("인공지능이 뭐예요?")
+    qtbot.keyClick(q.edit, Qt.Key.Key_Return)
+    assert llm.last["req"].effort == "mid" and controller.session.state == "thinking"
+    assert q.isVisible() and q.edit.text() == "인공지능이 뭐예요?"  # 보낸 뒤에도 남는다
+    qtbot.keyClick(q.edit, Qt.Key.Key_Escape)
+    assert not q.isVisible() and not controller.orb.question_open
+
+
+def test_bubble_streams_words(qtbot, controller):
+    b = controller.bubble
+    controller.session.on_bubble(True)
+    assert b.isVisible()
+    b.set_text("안녕하세요 저는")
+    b.tick(0.1)
+    assert b.words == ["안녕하세요", "저는"]
+    b.set_text("안녕하세요 저는 " + "아주 긴 문장을 계속 말하는 강아지입니다 " * 6)
+    assert b._lines() > 3 and b._scroll_to == b._lines() - 3  # 세 줄을 넘으면 위로 밀린다
+    b.tick(0.5)
+    assert b._scroll == b._scroll_to
+    b.grab()
+    b.set_text("새 답")  # 앞이 달라지면 처음부터
+    assert b.words == ["새", "답"]
+    controller.session.on_bubble(False)
+    assert not b.isVisible()

@@ -1,4 +1,4 @@
-"""상태 묶음: 대본 읽기, 자동 발표, PowerPoint 따라가기. Qt 화면을 모른다.
+"""상태 묶음: 대본 읽기, 자동 발표, PowerPoint 따라가기, 질의응답. Qt 화면을 모른다.
 
 화면은 on_* 콜백으로 알림을 받고, 사용자가 누른 것은 메서드로 부른다.
 음성, 연동, 시계는 생성자로 받아서 시험에서는 가짜로 바꾼다.
@@ -7,10 +7,13 @@
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Protocol
 
 from .link import LinkError, PptState, resolve_local_path
+from .llm.base import LLMError, Request
+from .qa import Memory, SentenceSplitter, grounding, question_text, system_prompt
 from .settings import SPEEDS, Edits, Settings
 from .slides import Deck, load_deck, to_speech
 from .voice.cloud import PROVIDER_NAMES
@@ -34,6 +37,18 @@ CHIP_SEARCHING = "PowerPoint 찾는 중…"
 CHIP_NONE = "PowerPoint에 열린 발표 자료가 없어요"
 CHIP_LOST = "PowerPoint 연결이 끊겼어요"
 CHIP_OFF = "연동 꺼짐"
+WAIT_LINES = ((8.0, "조금만 기다려 주세요"), (30.0, "아직 생각하고 있어요"))  # 말풍선 없이 목소리만
+ERROR_LINES = {  # (강아지가 하는 말, 알림 줄)
+    "key": ("앗, 제 열쇠가 맞지 않아요.", "API 키가 없거나 틀렸어요. 설정에서 확인하세요."),
+    "quota": ("오늘은 대답을 너무 많이 했나 봐요. 잠깐 쉬었다가 다시 물어봐 주세요.", "요금 한도나 사용량 제한에 걸렸어요."),
+    "network": ("인터넷이 끊긴 것 같아요.", "인터넷 연결을 확인하세요."),
+    "timeout": ("생각이 너무 길어졌어요. 다시 물어봐 주시겠어요?", "답이 늦어요. 생각 깊이를 낮춰 보세요."),
+    "other": ("앗, 문제가 생겼어요.", "{detail}"),
+}
+CUT_LINE = "앗, 말하다가 연결이 끊겼어요."
+FIRST_TOKEN_TIMEOUT = {"low": 45.0, "mid": 90.0, "high": 150.0}  # 첫 글자까지
+STALL_TIMEOUT = 30.0  # 답이 오다가 새 글이 없으면
+BUBBLE_LINGER = 3.0  # 다 말한 뒤 말풍선이 남는 시간
 
 IDLE, READING, THINKING, SPEAKING, ERROR = "idle", "reading", "thinking", "speaking", "error"
 
@@ -54,13 +69,31 @@ def _noop(*_args):
     pass
 
 
+@dataclass
+class _Answer:
+    tag: tuple
+    question: str
+    effort: str
+    splitter: SentenceSplitter = field(default_factory=SentenceSplitter)
+    spoken: list[str] = field(default_factory=list)
+    cancel: object = None  # LLM 스트림을 멈추는 Event
+    timers: list = field(default_factory=list)
+    stall: object = None
+    first_token: bool = False
+    error: LLMError | None = None
+    cut: bool = False
+
+
 class Session:
     def __init__(self, settings: Settings, voice: VoicePort | None, clock: Clock,
-                 link_factory: Callable | None = None, edits: Edits | None = None):
+                 link_factory: Callable | None = None, edits: Edits | None = None,
+                 llm_start: Callable | None = None):
         self.settings = settings
         self.voice = voice
         self.clock = clock
         self.link_factory = link_factory  # (on_change, on_error) -> 연동 객체(goto_slide, close)
+        # (제공자, 키, Request, on_chunk, on_done, on_error) -> 취소 Event. 콜백은 화면 스레드에서 불려야 한다
+        self.llm_start = llm_start
         self.edits_store = edits if edits is not None else Edits(settings.folder)
         self.voice_list = voice.voices() if voice is not None else []
         self.deck: Deck | None = None
@@ -74,6 +107,12 @@ class Session:
         self.link = None
         self.ppt_state: PptState | None = None
         self.link_error = ""
+        self.memory = Memory()
+        self.answer: _Answer | None = None
+        self._answer_seq = 0
+        self.bubble = False  # 말풍선이 떠 있나. 떠 있는 동안 강아지는 그 자리에 머문다
+        self.sweat = False  # 오류를 말하는 중(땀방울)
+        self._bubble_timer = None
 
         # 화면이 덮어쓰는 알림
         self.on_state: Callable[[str], None] = _noop
@@ -84,6 +123,9 @@ class Session:
         self.on_link: Callable[[str], None] = _noop  # 연동 칩 문구
         self.on_pose: Callable[[str], None] = _noop  # 강아지 자세 요청 ("happy")
         self.on_script: Callable[[int], None] = _noop  # 대본이 바뀐 장(-1이면 모든 장). 대본 소리를 다시 만든다
+        self.on_bubble: Callable[[bool], None] = _noop  # 말풍선 보이기·숨기기
+        self.on_question: Callable[[str], None] = _noop  # 질문창 글("" 비우기, 글이면 다시 채우기)
+        self.on_shake: Callable[[], None] = _noop  # 원 버튼 흔들기
 
     # ------------------------------------------------------------ 음성과 설정
 
@@ -143,8 +185,8 @@ class Session:
         return True
 
     def toggle_read(self) -> None:
-        """[읽기/정지]: 무엇이든 말하는 중이면 멈추고, 아니면 지금 장을 읽는다."""
-        if self.reading is not None or self.state in (READING, SPEAKING):
+        """[읽기/정지]: 무엇이든 말하는 중이면(대본이든 답이든) 멈추고, 아니면 지금 장을 읽는다."""
+        if self.reading is not None or self.state in (READING, SPEAKING, THINKING):
             self.stop()
         else:
             self.read_current()
@@ -152,12 +194,18 @@ class Session:
     def stop(self) -> None:
         self.token += 1
         self.reading = None
+        if self.answer is not None:
+            self._drop_answer()
+            self._set_bubble(False)
         if self.voice is not None:
             self.voice.stop()
         self._set_state(IDLE)
 
     def voice_done(self, tag, completed: bool) -> None:
-        """음성이 한 장을 끝냈다. completed는 끝까지 읽었는지다."""
+        """음성이 한 장(또는 답 하나)을 끝냈다. completed는 끝까지 읽었는지다."""
+        if self.answer is not None and tag == self.answer.tag:
+            self._answer_spoken(completed)
+            return
         if self.reading is None or self.reading[0] != tag:
             return  # 그 사이 다른 장을 읽기 시작했거나 멈춤
         i = self.reading[1]
@@ -174,10 +222,22 @@ class Session:
         self.speak_slide(nxt)
 
     def voice_error(self, tag, _message: str) -> None:
+        if self.answer is not None and tag == self.answer.tag:
+            self._drop_answer()  # 답의 글은 이미 말풍선에 있다
+            self._set_state(IDLE)
+            self.on_notice(VOICE_FAILED)
+            self._linger_bubble()
+            return
         if self.reading is not None and self.reading[0] == tag:
             self.reading = None
             self._set_state(IDLE)
             self.on_notice(VOICE_FAILED)
+
+    def voice_started(self, tag, _index: int) -> None:
+        """답의 첫 문장이 소리 나기 시작하면 "말하는 중"으로 바꾸고 말풍선을 띄운다."""
+        if self.answer is not None and tag == self.answer.tag and self.state == THINKING:
+            self._set_state(SPEAKING)
+            self._set_bubble(True)
 
     def cloud_voice_failed(self, provider: str, kind: str) -> None:
         """클라우드 음성이 실패해 운영체제 음성으로 이어 읽는다. 키 문제·한도면 키를 다시 확인할 때까지 쓰지 않는다."""
@@ -201,6 +261,155 @@ class Session:
 
     # ------------------------------------------------------------ 파일과 장
 
+    # ------------------------------------------------------------ 질의응답
+
+    def ask(self, question: str, effort: str = "low") -> bool:
+        """질문을 보낸다. 읽던 것과 이전 답을 멈추고 "생각 중"이 된다."""
+        q = (question or "").strip()
+        if not q:
+            return False
+        self.stop()
+        self._answer_seq += 1
+        ans = _Answer(("answer", self._answer_seq), q, effort if effort in FIRST_TOKEN_TIMEOUT else "low")
+        self.answer = ans
+        self._set_state(THINKING)
+        provider = self.settings["provider"]
+        key = self.settings["keys"].get(provider, "")
+        if not key or self.llm_start is None:
+            self._llm_error(ans.tag, LLMError("key", ""))
+            return True
+        showing = None
+        if self.link is not None and self.ppt_state is not None and self.ppt_state.mode in ("show", "edit"):
+            showing = self.ppt_state.index
+        req = Request(self.settings["models"][provider], ans.effort, system_prompt(self.settings["persona"]),
+                      grounding(self.deck, self.edits) if self.deck is not None else "",
+                      self.memory.turns(), question_text(q, showing))
+        for after, line in WAIT_LINES:
+            ans.timers.append(self.clock.call_later(after, lambda a=ans, t=line: self._wait_line(a, t)))
+        ans.timers.append(self.clock.call_later(
+            FIRST_TOKEN_TIMEOUT[ans.effort], lambda a=ans: self._timeout(a, first=True)))
+        tag = ans.tag
+        ans.cancel = self.llm_start(provider, key, req, lambda text: self._llm_chunk(tag, text),
+                                    lambda: self._llm_done(tag), lambda e: self._llm_error(tag, e))
+        return True
+
+    def _wait_line(self, ans: _Answer, line: str) -> None:
+        if ans is self.answer and not ans.first_token and self.voice is not None:
+            self.voice.speak(line, self.voice_id(), self.settings["speed"], tag=("wait", line),
+                             output_id=self.output_id())
+
+    def _timeout(self, ans: _Answer, first: bool) -> None:
+        if ans is self.answer and (not first or not ans.first_token):
+            self._llm_error(ans.tag, LLMError("timeout", ""))
+
+    def _llm_chunk(self, tag, text: str) -> None:
+        ans = self.answer
+        if ans is None or ans.tag != tag or ans.error is not None:
+            return
+        if not ans.first_token:
+            ans.first_token = True
+            for t in ans.timers:
+                t.cancel()
+            ans.timers = []
+        if ans.stall is not None:
+            ans.stall.cancel()
+        ans.stall = self.clock.call_later(STALL_TIMEOUT, lambda a=ans: self._timeout(a, first=False))
+        for sentence in ans.splitter.feed(text):
+            self._say(ans, sentence)
+
+    def _say(self, ans: _Answer, sentence: str) -> None:
+        text = to_speech(sentence)  # 글머리 기호를 지운다
+        if not text or self.voice is None:
+            return
+        if not ans.spoken:
+            self.voice.begin_answer(ans.tag, self.voice_id(), self.settings["speed"], self.output_id())
+        ans.spoken.append(text)
+        self.voice.add_sentence(text)
+
+    def _llm_done(self, tag) -> None:
+        ans = self.answer
+        if ans is None or ans.tag != tag or ans.error is not None:
+            return
+        if ans.stall is not None:
+            ans.stall.cancel()
+        for sentence in ans.splitter.finish():
+            self._say(ans, sentence)
+        if not ans.spoken:
+            self._llm_error(tag, LLMError("other", "빈 답"))
+            return
+        self.voice.end_answer()
+
+    def _llm_error(self, tag, error: LLMError) -> None:
+        """강아지는 땀방울을 얹고 짧게 말하고, 원 버튼이 흔들리고, 알림 줄이 뜨고, 질문을 질문창에 다시 채운다."""
+        ans = self.answer
+        if ans is None or ans.tag != tag or ans.error is not None:
+            return
+        ans.error = error
+        self._stop_llm(ans)
+        speech, notice = ERROR_LINES.get(error.kind, ERROR_LINES["other"])
+        self.on_shake()
+        self.on_notice(notice.format(detail=error.detail or speech))
+        self.on_question(ans.question)
+        if ans.spoken:  # 답하다가 끊김: 이미 넣은 문장까지 말하고 끊겼다고 말한다
+            ans.cut = True
+            self.voice.add_sentence(CUT_LINE)
+            self.voice.end_answer()
+            return
+        self.sweat = True
+        if self.voice is None:
+            self._answer_spoken(False)
+            return
+        self.voice.begin_answer(ans.tag, self.voice_id(), self.settings["speed"], self.output_id())
+        self.voice.add_sentence(speech)
+        self.voice.end_answer()
+
+    def _answer_spoken(self, completed: bool) -> None:
+        ans = self.answer
+        self.answer = None
+        self.sweat = False
+        self._stop_llm(ans)
+        self._set_state(IDLE)
+        if ans.error is None and completed:
+            self.memory.add(ans.question, " ".join(ans.spoken))
+            self.on_pose("happy")
+            self.on_question("")
+        elif ans.cut:
+            self.memory.add(ans.question, " ".join(ans.spoken), cut=True)
+        if completed:
+            self._linger_bubble()
+        else:
+            self._set_bubble(False)
+
+    def _stop_llm(self, ans: _Answer | None) -> None:
+        if ans is None:
+            return
+        if ans.cancel is not None:
+            ans.cancel.set()
+        for t in ans.timers + ([ans.stall] if ans.stall is not None else []):
+            t.cancel()
+        ans.timers, ans.stall = [], None
+
+    def _drop_answer(self) -> None:
+        ans, self.answer = self.answer, None
+        self.sweat = False
+        self._stop_llm(ans)
+
+    def _set_bubble(self, visible: bool) -> None:
+        if self._bubble_timer is not None:
+            self._bubble_timer.cancel()
+            self._bubble_timer = None
+        if visible != self.bubble:
+            self.bubble = visible
+            self.on_bubble(visible)
+
+    def _linger_bubble(self) -> None:
+        if self.bubble:
+            if self._bubble_timer is not None:
+                self._bubble_timer.cancel()
+            self._bubble_timer = self.clock.call_later(BUBBLE_LINGER, lambda: self._set_bubble(False))
+
+    # ------------------------------------------------------------ 파일과 장
+
     def open_file(self, path, keep_position: bool = False) -> bool:
         path = Path(path)
         if path.suffix.lower() in (".ppt", ".pps", ".key"):
@@ -213,6 +422,8 @@ class Session:
             return False
         self.stop()
         position = self.current if keep_position else 0
+        if self.deck is None or not _same_path(self.deck.path, path):
+            self.memory.clear()  # 다른 발표 자료면 대화 기억을 잊는다
         self.deck = deck
         self.deck_mtime = _mtime(path)
         self._load_edits()

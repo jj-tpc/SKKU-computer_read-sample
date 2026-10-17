@@ -12,6 +12,10 @@ sys.path.insert(0, str(ROOT))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 
+def pytest_configure(config):
+    config.addinivalue_line("markers", "live: 실제 LLM·음성 API를 부른다. 키를 환경 변수로 줬을 때만 돈다")
+
+
 @pytest.fixture(autouse=True)
 def app_home(tmp_path, monkeypatch):
     """설정 폴더를 임시 폴더로 두고, 옛 설정 파일도 임시 위치를 보게 한다."""

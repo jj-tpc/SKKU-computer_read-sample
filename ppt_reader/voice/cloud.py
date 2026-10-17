@@ -52,11 +52,18 @@ class VoiceError(Exception):
 
 
 def scrub(text: str, *secrets: str) -> str:
-    """오류 문구의 첫 줄만 남기고, 넘겨준 키와 키 모양 문자열을 지운다."""
+    """오류 문구의 첫 줄만 남기고, 넘겨준 키와 키 모양 문자열을 지운다.
+
+    제공자가 키 앞뒤 몇 글자를 보여 주는 경우("Incorrect API key provided: sk-pr****1234")도 있어서
+    키의 앞 6글자로 시작하는 낱말과 "API key provided:" 뒤의 낱말도 지운다.
+    """
     line = (text or "").strip().splitlines()[0] if (text or "").strip() else ""
     for secret in secrets:
         if secret:
             line = line.replace(secret, "***")
+            if len(secret) >= 8:
+                line = re.sub(re.escape(secret[:6]) + r"\S*", "***", line)
+    line = re.sub(r"(?i)(api key provided:?\s*)\S+", r"\1***", line)
     return _KEYISH.sub("***", line)[:200]
 
 

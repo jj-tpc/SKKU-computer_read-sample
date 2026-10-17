@@ -31,3 +31,44 @@ def test_stream_waits_for_what_comes_next():
     assert sp.feed("5배") == []
     assert sp.finish() == ["오늘은 3.5배"]
     assert sp.finish() == []
+
+
+# ---------------------------------------------------------------- 근거 묶음, 지침, 기억
+
+from pathlib import Path  # noqa: E402
+
+from ppt_reader.qa import BASE_SYSTEM, Memory, grounding, question_text, system_prompt  # noqa: E402
+from ppt_reader.slides import load_deck  # noqa: E402
+
+SAMPLE = Path(__file__).resolve().parent.parent / "sample" / "sample_presentation.pptx"
+
+
+def test_grounding_contents_and_order():
+    deck = load_deck(SAMPLE)
+    g = grounding(deck, {2: "고친 대본입니다"}, {3: ["막대 그래프", ""]})
+    lines = g.splitlines()
+    assert lines[0] == '<자료 파일="sample_presentation.pptx" 장수="6">' and lines[-1] == "</자료>"
+    assert g.index('<슬라이드 번호="1"') < g.index('<슬라이드 번호="2"') < g.index('<슬라이드 번호="6"')
+    assert '<슬라이드 번호="4" 제목=' in g and '숨김="예">' in g  # 숨긴 장도 넣고 표시한다
+    assert "고친 대본: 고친 대본입니다" in g and "그림 1: 막대 그래프" in g and "그림 2:" not in g
+    assert "지금 화면" not in g  # 바뀌는 지금 장은 근거가 아니라 질문 쪽에 넣는다
+    assert grounding(deck, {}) == grounding(deck, {})  # 바뀌지 않아 캐시된다
+
+
+def test_system_and_question():
+    assert system_prompt("") == BASE_SYSTEM
+    s = system_prompt("  반말로  ")
+    assert s.startswith(BASE_SYSTEM) and "<개인 지침>\n반말로\n</개인 지침>" in s
+    assert "1. 자료에 없는 내용은 자료에 없다고 밝힌다." in s and "8문장을 넘기지 않는다" in s
+    assert question_text("왜요?", None) == "왜요?" and question_text("왜요?", 4) == "(지금 화면: 4번 슬라이드) 왜요?"
+
+
+def test_memory_keeps_last_six_and_marks_cut():
+    m = Memory()
+    for i in range(8):
+        m.add(f"질문{i}", f"답{i}")
+    assert [q for q, _ in m.turns()] == [f"질문{i}" for i in range(2, 8)]
+    m.add("끊긴 질문", "답하다가", cut=True)
+    assert m.turns()[-1] == ("끊긴 질문", "답하다가 (끊김)")
+    m.clear()
+    assert m.turns() == []
