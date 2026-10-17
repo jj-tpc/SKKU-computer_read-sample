@@ -613,9 +613,11 @@ class Engine:
   - 목소리 목록: `GET /v2/voices?page_size=100`(다음 쪽은 `next_page_token`). 키 확인: `GET /v2/voices?page_size=1`.
   - 오류: 401·403 → `key`, 402(`insufficient_credits`) → `quota`, 429(`rate_limit_exceeded`, `concurrent_limit_exceeded`, `system_busy`) → `network`(잠깐 막힌 것이라 다음에 다시 시도), 연결 실패 → `network`, 8초 초과 → `timeout`, 그 밖 → `other`. 본문의 `detail.code`(옛 `detail.status`도)를 본다.
 - **Gemini**(`google-genai`, 질의응답과 같은 키):
-  - 합성: 모델(`gemini-3.8-flash-tts` 기본)에 글과 `speech_config`의 목소리(`Kore` 기본)를 보낸다. 응답은 24kHz 16bit 모노 PCM이라 `rate = 24000`으로 돌려준다.
+  - 합성: Interactions API `client.interactions.create(model=..., input=[{"type": "user_input", "content": [{"type": "text", "text": 문장}]}], response_format={"type": "audio"}, generation_config={"speech_config": [{"voice": 목소리}]})`. 모델은 `gemini-3.8-flash-tts`, 목소리는 `Kore`가 기본이다.
+  - 응답: `interaction.output_audio.data`를 base64로 풀면 RIFF WAV(24kHz, 모노, 16bit)다. WAV 머리를 읽어 PCM과 표본 빈도를 꺼내고 `rate = 24000`으로 돌려준다.
+  - 글만 보낸다. Gemini 3.8 TTS는 입력 글을 그대로 읽을 대본으로 다루어서, "또박또박 읽어라" 같은 지시를 글에 넣으면 그것까지 소리 내어 읽는다. 언어는 스스로 알아낸다.
   - 낱말 시각을 주지 않으므로 `estimate_words`로 어림한다.
-  - 모델은 지시를 따르는 생성 모델이라, 보낼 때 "다음 글을 덧붙이거나 빼지 말고 그대로 읽어라"라는 짧은 지시를 함께 넣는다 `[보충]`.
+  - 목소리 목록은 미리 만든 30개를 코드에 둔다(Zephyr, Puck, Charon, Kore, Fenrir, Leda, Orus, Aoede, Callirrhoe, Autonoe, Enceladus, Iapetus, Umbriel, Algieba, Despina, Erinome, Algenib, Rasalgethi, Laomedeia, Achernar, Alnilam, Schedar, Gacrux, Pulcherrima, Achird, Zubenelgenubi, Vindemiatrix, Sadachbia, Sadaltager, Sulafat).
   - 오류는 질의응답의 Gemini 어댑터와 같은 방식으로 다섯 종류로 바꾼다(<module name="ppt_reader/llm/base.py, claude.py, openai.py, gemini.py">).
 - **키**: 키는 로그, 오류 문구, 알림 줄에 찍지 않는다. 오류 첫 줄에서 키 모양 문자열을 지운다.
 - 근거: 21, 22, `docs/research/cloud-tts.md`.

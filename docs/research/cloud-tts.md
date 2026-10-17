@@ -228,6 +228,12 @@
 - 한도: 입력 8,192토큰, 출력 16,384토큰. [G2]
 - 가격(100만 토큰당): Flash TTS 입력 $0.50 / 출력 $9.00(2026-12-31까지), 2027-01-01부터 $1.00 / $18.00. Flash-Lite TTS 출력 $6.00(이후 $12.00). 무료 등급이 있다. 오디오는 초당 25토큰이므로 Flash TTS 1분은 약 $0.0135다. [G3]
 - 판단: 이미 Gemini 키와 SDK가 있어 붙이기 쉽다. 하지만 시각 정보와 속도가 없어 OpenAI Speech와 같은 수준이다(추정).
+- 추가 확인(2026-10-17, 공식 페이지 재조회):
+  - Python 예제는 `client.interactions.create(model="gemini-3.8-flash-tts", input=[{"type": "user_input", "content": [{"type": "text", "text": ...}]}], response_format={"type": "audio"}, generation_config={"speech_config": [{"voice": "Kore"}]})`이고, 소리는 `base64.b64decode(interaction.output_audio.data)`로 꺼낸다. 모델 페이지는 Interactions API와 generateContent를 둘 다 지원한다고 적는다. [G1][G2]
+  - 한 번에 받는 응답(`stream=False`)은 RIFF 머리가 있는 WAV(24 kHz, 모노, 16비트 LE)다. 스트리밍은 머리 없는 `audio/l16`이다. [G1]
+  - "Gemini 3.8 TTS treats input text strictly as a verbatim transcript." 글 안에 넣은 지시("Say cheerfully: ...")는 소리 내어 읽힐 수 있다. 말투는 `speech_metadata.style`로 따로 준다. [G2]
+  - 언어는 스스로 알아낸다. `language_code` 매개변수는 문서에 없다. [G1]
+  - 미리 만든 목소리 30개: Zephyr, Puck, Charon, Kore, Fenrir, Leda, Orus, Aoede, Callirrhoe, Autonoe, Enceladus, Iapetus, Umbriel, Algieba, Despina, Erinome, Algenib, Rasalgethi, Laomedeia, Achernar, Alnilam, Schedar, Gacrux, Pulcherrima, Achird, Zubenelgenubi, Vindemiatrix, Sadachbia, Sadaltager, Sulafat. [G1]
 
 ## 제공자별 요약 (파이프라인 관점)
 
