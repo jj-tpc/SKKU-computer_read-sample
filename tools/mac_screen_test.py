@@ -146,12 +146,14 @@ def run(app_path: str, out_dir: str) -> int:
         time.sleep(1)
         shot(out, "05_question_typed")
         typed_front = frontmost()
-        note(f"{'OK  ' if typed_front == show_front else 'WARN'} 질문창에 글을 친 뒤 맨 앞 앱: {typed_front}")
+        note(f"INFO 질문창에 글을 치는 동안 맨 앞 앱: {typed_front}")
         cliclick("kp:esc")
         time.sleep(1)
         shot(out, "06_question_closed")
         closed_front = frontmost()
-        note(f"{'OK  ' if closed_front == show_front else 'WARN'} 질문창을 닫은 뒤 맨 앞 앱: {closed_front}")
+        back = closed_front == show_front
+        note(f"{'OK  ' if back else 'FAIL'} 질문창을 닫은 뒤 맨 앞 앱: {closed_front} (쇼: {show_front})")
+        ok = ok and back
     finally:
         app.terminate()
         show.terminate()

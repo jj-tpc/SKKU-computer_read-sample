@@ -64,9 +64,10 @@ def float_over_fullscreen(widget) -> bool:
 
 
 def make_key(widget) -> bool:
-    """질문창을 열 때: 쇼(PowerPoint)를 활성 앱으로 둔 채 이 창만 키 입력을 받게 한다(Spotlight처럼).
+    """질문창을 열 때: 전체 화면 쇼 위에 띄우고 키 입력을 받게 한다.
 
-    Qt의 activateWindow()는 앱 자체를 활성화해서 전체 화면 쇼를 흔들 수 있다. 창을 닫으면 키 입력은 쇼로 돌아간다.
+    빌드 서버 시험에서 이때 이 앱이 활성 앱이 되지만, 쇼의 전체 화면은 그대로 남았다. 닫을 때 restore_front로
+    쇼를 다시 활성화한다. 띄울 때 활성화를 막으면(WA_ShowWithoutActivating) 글자가 들어가지 않았다.
     """
     if not _cocoa():
         return False

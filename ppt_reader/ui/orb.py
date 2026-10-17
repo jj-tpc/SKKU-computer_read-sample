@@ -425,8 +425,6 @@ class QuestionWindow(QWidget):
                          | Qt.WindowType.Tool)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_MacAlwaysShowToolWindow)
-        # 띄울 때 앱을 활성화하지 않는다(macOS에서 전체 화면 쇼가 활성 앱으로 남아야 한다). 키 입력은 open()에서 준다
-        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         self.on_send = on_send
         self.on_close = on_close
         self.effort = "low"
