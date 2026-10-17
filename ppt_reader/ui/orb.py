@@ -72,10 +72,11 @@ def corner_center(available: QRect) -> QPoint:
 
 
 class OrbWindow(OverlayWindow):
-    def __init__(self, on_action: Callable[[str], None]):
+    def __init__(self, on_action: Callable[[str], None], on_press: Callable[[str | None], None] | None = None):
         super().__init__(click_through=False)
         self.resize(WIN_W, WIN_H)
         self.on_action = on_action
+        self.on_press = on_press  # 누른 뒤에 부른다. 위성 버튼이면 그 이름, 원 버튼이면 None
         self.state = "idle"  # idle / reading / thinking / speaking
         self.level = 0.0  # 목소리 크기 0~1 (부드럽게 한 값)
         self.tone = 0.5  # 목소리 높낮이 느낌 0~1
@@ -241,6 +242,8 @@ class OrbWindow(OverlayWindow):
                 self.collapse()
             else:
                 self.expand()
+            if self.on_press:
+                self.on_press(None)
             return
         hit = self._satellite_at(local)
         if hit < 0:
@@ -252,6 +255,8 @@ class OrbWindow(OverlayWindow):
             self.collapse()
         self.on_action(key)
         self._show_tip()  # 읽기 ↔ 정지 글자가 바뀌었을 수 있다
+        if self.on_press:
+            self.on_press(key)
 
     # ------------------------------------------------------------ 그리기
 

@@ -30,6 +30,7 @@ from .qtcore import MainThreadInvoker, QtClock
 APP_TITLE = "PPT 읽어주기"
 FRAME_MS = 33  # 강아지와 원 버튼을 함께 그리는 타이머(약 30fps)
 HAPPY_SECONDS = 1.5
+GIVE_BACK_MS = (200, 700)  # 원 버튼을 누른 뒤 이 앱이 활성이 됐는지 보는 때(macOS). 빌드 서버에서 0.4초 안에 활성이 됐다
 MONITOR_CHECK_MS = 1000  # "쇼가 뜬 모니터 따라가기"일 때 쇼 창의 모니터를 다시 보는 간격
 PREVIEW_TEXT = "안녕하세요. 이 목소리로 읽어 드릴게요."
 DEFAULT_OUTPUT = "시스템 기본 장치"
@@ -81,7 +82,7 @@ class Controller(QObject):
         self.presynth_state: tuple[str, int, int, str] = ("off", 0, 0, "")  # (상태, 만든 수, 전체, 실패 이유). 설정 창이 보인다
         self.closers = closers or []
         self.dog = DogWindow(settings["dog"])
-        self.orb = OrbWindow(self.on_action)
+        self.orb = OrbWindow(self.on_action, self._orb_pressed)
         self.orb.set_speed(settings["speed"])
         self.question = QuestionWindow(self._send_question, self._question_closed)
         app = QGuiApplication.instance()
@@ -568,6 +569,17 @@ class Controller(QObject):
         if state == "stopped":
             return "캡션 멈춤", "warn", f"{done} / {total}", False, True
         return "캡션 완료", "ok", "", False, True
+
+    def _orb_pressed(self, key: str | None) -> None:
+        """창을 여는 버튼이 아니면, 누른 탓에 이 앱이 활성이 됐을 때 쇼에 돌려준다(macOS)."""
+        if key not in ("ask", "settings", "quit") and sys.platform == "darwin":
+            for ms in GIVE_BACK_MS:
+                QTimer.singleShot(ms, self._give_back)
+
+    def _give_back(self) -> None:
+        if self.question.isVisible():
+            return
+        platform_mac.give_back()
 
     def on_action(self, key: str) -> None:
         if key == "settings":

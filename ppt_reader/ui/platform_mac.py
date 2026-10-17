@@ -189,6 +189,25 @@ def front_app():
         return None
 
 
+def give_back() -> None:
+    """원 버튼을 누른 뒤 이 앱이 활성이 됐으면 마지막으로 본 다른 앱(쇼)에 돌려준다.
+
+    원 버튼 창은 활성화하지 않는 패널인데도, 빌드 서버에서 두 번째 누를 때 이 앱이 활성이 됐다.
+    그러면 쇼가 리모컨·방향키 입력을 못 받는다.
+    """
+    if not _cocoa():
+        return
+    try:
+        from AppKit import NSRunningApplication
+
+        if NSRunningApplication.currentApplication().isActive():
+            target = _last_other if _last_other is not None and not _last_other.isTerminated() else None
+            _trace("give_back", target.localizedName() if target else None)
+            restore_front(target)
+    except Exception as e:
+        _trace("give_back error", repr(e))
+
+
 def trace_state(label: str) -> None:
     """진단: 이 앱이 활성인지, 키 창이 무엇인지. PPT_READER_TRACE가 있을 때만."""
     if not os.environ.get("PPT_READER_TRACE") or not _cocoa():

@@ -64,6 +64,15 @@ def test_satellite_read_and_speed(qtbot, controller, app_home):
     assert orb.speed == 1.5 and Settings(app_home)["speed"] == 1.5
 
 
+def test_orb_press_reports_key(qtbot, controller, monkeypatch):
+    pressed = []
+    monkeypatch.setattr(controller, "_orb_pressed", pressed.append)
+    controller.orb.on_press = controller._orb_pressed
+    open_satellites(qtbot, controller.orb)
+    click(qtbot, controller.orb, controller.orb._target(2))  # [배속]
+    assert pressed == [None, "speed"]  # 원 버튼은 None, 위성 버튼은 이름(macOS에서 쇼에 활성을 돌려줄지 정한다)
+
+
 def test_satellites_collapse_after_4s_unless_hovered(qtbot, controller):
     orb = controller.orb
     open_satellites(qtbot, orb)

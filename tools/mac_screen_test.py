@@ -92,6 +92,15 @@ def question_open(path: Path, orb_px: tuple[float, float], scale: float) -> bool
     return white > 40
 
 
+def esc_lines(out: Path) -> int:
+    """앱 로그(PPT_READER_TRACE)에서 앱이 Esc를 받았다는 줄의 수."""
+    try:
+        text = (out / "app_stderr.txt").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return 0
+    return sum(1 for line in text.splitlines() if "esc monitor" in line or "] esc " in line)
+
+
 def cliclick(*commands: str) -> None:
     subprocess.run(["cliclick", *commands], check=True, timeout=30)
 
@@ -155,9 +164,15 @@ def run(app_path: str, out_dir: str) -> int:
         time.sleep(5)  # 위성 버튼이 4초 뒤 접히는지
         shot(out, "04_collapsed")
 
-        # 질문창: 쇼를 활성 앱으로 둔 채 이 창만 키 입력을 받아야 한다
+        # 두 번째 누르기: 빌드 서버에서 이때 이 앱이 활성이 됐었다. 앱이 쇼에 돌려줘야 한다
         cliclick(f"c:{x},{y}")
         time.sleep(1)
+        again = frontmost()
+        keeps = again == show_front
+        note(f"{'OK  ' if keeps else 'FAIL'} 원 버튼을 다시 누른 뒤 맨 앞 앱: {again} (쇼: {show_front})")
+        ok = ok and keeps
+
+        # 질문창: 글을 받고, Esc로 닫히면 쇼가 다시 맨 앞 앱이 되어야 한다
         cliclick(f"c:{x - 132},{y}")  # 위성 버튼 1번 [질문하기]
         time.sleep(1)
         cliclick("t:hello")
@@ -165,21 +180,21 @@ def run(app_path: str, out_dir: str) -> int:
         shot(out, "05_question_typed")
         typed_front = frontmost()
         note(f"INFO 질문창에 글을 치는 동안 맨 앞 앱: {typed_front}")
-        cliclick("kp:esc")
-        time.sleep(1)
-        closed = shot(out, "06_question_closed")
-        still = question_open(closed, orb, scale)
-        note(f"{'FAIL' if still else 'OK  '} Esc로 질문창이 {'닫히지 않음' if still else '닫힘'}")
-        ok = ok and not still
-        if still:  # 늦게 사라지는지, 입력이 더 와야 사라지는지 나눠 본다
-            time.sleep(3)
-            later = shot(out, "06a_question_closed_wait")
-            note(f"INFO 3초 더 기다린 뒤 질문창 {'남음' if question_open(later, orb, scale) else '닫힘'}")
-        if still:  # 포커스 돌려주기는 따로 보려고 한 번 더 누른다
+        # cliclick의 Esc가 앱에 닿지 않을 때가 있다(앱 로그에 Esc 줄이 없음). 그때만 다시 누른다
+        closed_ok = False
+        for attempt in range(1, 4):
+            seen = esc_lines(out)
             cliclick("kp:esc")
             time.sleep(1)
-            closed = shot(out, "06b_question_closed_retry")
-            note(f"INFO Esc를 한 번 더 누른 뒤 질문창 {'남음' if question_open(closed, orb, scale) else '닫힘'}")
+            if not question_open(shot(out, f"06_question_closed_{attempt}"), orb, scale):
+                closed_ok = True
+                break
+            if esc_lines(out) > seen:
+                note("FAIL 앱이 Esc를 받았는데 질문창이 남음")
+                break
+            note(f"INFO Esc {attempt}번째가 앱에 닿지 않음(빌드 서버의 입력 흉내), 다시 누름")
+        note(f"{'OK  ' if closed_ok else 'FAIL'} Esc로 질문창이 {'닫힘' if closed_ok else '닫히지 않음'}")
+        ok = ok and closed_ok
         closed_front = frontmost()
         back = closed_front == show_front
         note(f"{'OK  ' if back else 'FAIL'} 질문창을 닫은 뒤 맨 앞 앱: {closed_front} (쇼: {show_front})")
