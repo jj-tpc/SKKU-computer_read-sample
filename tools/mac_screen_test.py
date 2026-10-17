@@ -79,6 +79,19 @@ def find_color(path: Path, rgb, box=(2 / 3, 2 / 3, 1, 1), tol: int = 40):
     return ((xs / n, ys / n), n) if n else (None, 0)
 
 
+def question_open(path: Path, orb_px: tuple[float, float], scale: float) -> bool:
+    """질문창(흰 알약)이 보이는가. 원 버튼 중심 높이에서, 위성 버튼보다 왼쪽인 띠의 흰 픽셀을 센다."""
+    from PIL import Image
+
+    im = Image.open(path).convert("RGB")
+    px = im.load()
+    y = int(orb_px[1])
+    x0, x1 = int(orb_px[0] - 400 * scale), int(orb_px[0] - 170 * scale)
+    white = sum(1 for x in range(max(0, x0), max(0, x1), 2) for dy in (-8, 0, 8)
+                if all(c > 235 for c in px[x, y + int(dy * scale)]))
+    return white > 40
+
+
 def cliclick(*commands: str) -> None:
     subprocess.run(["cliclick", *commands], check=True, timeout=30)
 
@@ -99,7 +112,10 @@ def run(app_path: str, out_dir: str) -> int:
     note(f"가짜 쇼 맨 앞 앱: {show_front}")
 
     exe = Path(app_path) / "Contents" / "MacOS" / "PPTReader"
-    env = dict(os.environ, PPT_READER_HOME=tempfile.mkdtemp(prefix="ppt_home_"), PPT_READER_TRACE="1")
+    home = Path(tempfile.mkdtemp(prefix="ppt_home_"))
+    # 쇼 중에 쓰는 모습을 본다: 처음 켬 설정 창이 뜨지 않게 한다
+    (home / "settings.json").write_text('{"first_run_done": true}', encoding="utf-8")
+    env = dict(os.environ, PPT_READER_HOME=str(home), PPT_READER_TRACE="1")
     app_log = open(out / "app_stderr.txt", "w", encoding="utf-8")
     app = subprocess.Popen([str(exe), str(ROOT / "sample" / "sample_presentation.pptx")], env=env,
                            stdout=app_log, stderr=subprocess.STDOUT)
@@ -151,7 +167,15 @@ def run(app_path: str, out_dir: str) -> int:
         note(f"INFO 질문창에 글을 치는 동안 맨 앞 앱: {typed_front}")
         cliclick("kp:esc")
         time.sleep(1)
-        shot(out, "06_question_closed")
+        closed = shot(out, "06_question_closed")
+        still = question_open(closed, orb, scale)
+        note(f"{'FAIL' if still else 'OK  '} Esc로 질문창이 {'닫히지 않음' if still else '닫힘'}")
+        ok = ok and not still
+        if still:  # 포커스 돌려주기는 따로 보려고 한 번 더 누른다
+            cliclick("kp:esc")
+            time.sleep(1)
+            closed = shot(out, "06b_question_closed_retry")
+            note(f"INFO Esc를 한 번 더 누른 뒤 질문창 {'남음' if question_open(closed, orb, scale) else '닫힘'}")
         closed_front = frontmost()
         back = closed_front == show_front
         note(f"{'OK  ' if back else 'FAIL'} 질문창을 닫은 뒤 맨 앞 앱: {closed_front} (쇼: {show_front})")

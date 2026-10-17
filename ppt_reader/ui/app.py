@@ -132,6 +132,7 @@ class Controller(QObject):
         return QGuiApplication.primaryScreen()
 
     def _place(self) -> None:
+        platform_mac.note_front()
         screen = self._screen()
         available = screen.availableGeometry()
         area = Area(available.x(), available.y(), available.width(), available.height())

@@ -86,8 +86,37 @@ def _trace(*parts) -> None:
         print("[mac-focus]", *parts, file=sys.stderr, flush=True)
 
 
+_last_other = None  # 마지막으로 본, 이 앱이 아닌 맨 앞 앱(보통 쇼)
+_last_front_pid = None
+
+
+def note_front() -> None:
+    """1초마다 부른다. 이 앱이 아닌 맨 앞 앱을 기억해 둔다.
+
+    질문창을 여는 순간에 이미 이 앱이 활성일 수 있다(빌드 서버 시험에서 그랬다). 그때 돌려줄 곳이 이 값이다.
+    """
+    global _last_other, _last_front_pid
+    if not _cocoa():
+        return
+    try:
+        from AppKit import NSRunningApplication, NSWorkspace
+
+        app = NSWorkspace.sharedWorkspace().frontmostApplication()
+        pid = app.processIdentifier() if app is not None else None
+        if pid != _last_front_pid:
+            _last_front_pid = pid
+            _trace("front changed", app.localizedName() if app else None)
+        if app is not None and pid != NSRunningApplication.currentApplication().processIdentifier():
+            _last_other = app
+    except Exception:
+        pass
+
+
 def front_app():
-    """질문창을 열기 전에 맨 앞에 있던 앱(보통 PowerPoint). 닫을 때 다시 앞으로 돌린다."""
+    """질문창을 열기 전에 맨 앞에 있던 앱(보통 PowerPoint). 닫을 때 다시 앞으로 돌린다.
+
+    이 앱이 이미 맨 앞이면 note_front가 마지막으로 본 다른 앱을 돌려준다.
+    """
     if not _cocoa():
         return None
     try:
@@ -95,13 +124,32 @@ def front_app():
 
         app = NSWorkspace.sharedWorkspace().frontmostApplication()
         me = NSRunningApplication.currentApplication()
-        _trace("front_app", app.localizedName() if app else None, "me_active", me.isActive())
-        if app is not None and app.processIdentifier() == me.processIdentifier():
-            return None  # 이미 이 앱이 맨 앞이면 돌려줄 곳이 없다
-        return app
+        mine = app is not None and app.processIdentifier() == me.processIdentifier()
+        target = _last_other if mine or app is None else app
+        if target is not None and target.isTerminated():
+            target = None
+        _trace("front_app", app.localizedName() if app else None, "me_active", me.isActive(),
+               "target", target.localizedName() if target else None)
+        return target
     except Exception as e:
         _trace("front_app error", repr(e))
         return None
+
+
+def trace_state(label: str) -> None:
+    """진단: 이 앱이 활성인지, 키 창이 무엇인지. PPT_READER_TRACE가 있을 때만."""
+    if not os.environ.get("PPT_READER_TRACE") or not _cocoa():
+        return
+    try:
+        from AppKit import NSApplication, NSRunningApplication, NSWorkspace
+
+        key = NSApplication.sharedApplication().keyWindow()
+        front = NSWorkspace.sharedWorkspace().frontmostApplication()
+        _trace(label, "me_active", NSRunningApplication.currentApplication().isActive(),
+               "key", type(key).__name__ if key is not None else None, key.title() if key is not None else "",
+               "front", front.localizedName() if front else None)
+    except Exception as e:
+        _trace(label, "error", repr(e))
 
 
 def restore_front(app) -> None:

@@ -481,8 +481,10 @@ class QuestionWindow(QWidget):
         if not platform_mac.make_key(self):
             self.activateWindow()
         self.edit.setFocus()
+        platform_mac.trace_state("question opened")
 
     def close_box(self) -> None:
+        platform_mac.trace_state("question closing")
         self.hide()
         self.on_close()
 
@@ -506,13 +508,22 @@ class QuestionWindow(QWidget):
 
     def eventFilter(self, obj, event):
         # macOS는 Esc를 단축키 처리 단계(ShortcutOverride)에서 먼저 넘기므로 두 단계 모두 받는다
-        if (obj is self.edit and event.type() in (QEvent.Type.KeyPress, QEvent.Type.ShortcutOverride)
-                and event.key() == Qt.Key.Key_Escape):
-            event.accept()
-            if self.isVisible():
-                self.close_box()
-            return True
+        if obj is self.edit and event.type() in (QEvent.Type.KeyPress, QEvent.Type.ShortcutOverride):
+            if event.key() == Qt.Key.Key_Escape:
+                platform_mac.trace_state(f"esc {event.type().name}")
+                event.accept()
+                if self.isVisible():
+                    self.close_box()
+                return True
         return super().eventFilter(obj, event)
+
+    def keyPressEvent(self, event):
+        # 입력 칸이 포커스를 잃었어도 창이 Esc를 받으면 닫는다
+        if event.key() == Qt.Key.Key_Escape:
+            platform_mac.trace_state("esc window")
+            self.close_box()
+            return
+        super().keyPressEvent(event)
 
     def mousePressEvent(self, event):
         pos = event.position()

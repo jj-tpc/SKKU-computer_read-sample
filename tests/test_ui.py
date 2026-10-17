@@ -160,6 +160,14 @@ def test_question_window_sends_and_cycles_effort(qtbot, controller):
     assert not q.isVisible() and not controller.orb.question_open
 
 
+def test_question_window_closes_on_esc_without_edit_focus(qtbot, controller):
+    controller.open_question()
+    q = controller.question
+    assert q.isVisible()
+    qtbot.keyClick(q, Qt.Key.Key_Escape)  # 입력 칸이 아니라 창이 Esc를 받아도 닫힌다
+    assert not q.isVisible() and not controller.orb.question_open
+
+
 def test_bubble_streams_words(qtbot, controller):
     b = controller.bubble
     controller.session.on_bubble(True)
