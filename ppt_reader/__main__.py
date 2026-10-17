@@ -1,7 +1,11 @@
-"""실행: python -m ppt_reader [파일.pptx]  (옵션 없이 실행하면 화면이 뜬다)"""
+"""실행: python -m ppt_reader [파일.pptx]  (옵션 없이 실행하면 강아지와 원 버튼이 뜬다)
+
+화면 없이 도는 옵션(--dump, --say 등)은 Qt 화면을 불러오지 않는다.
+"""
 from __future__ import annotations
 
 import argparse
+import os
 import queue
 import sys
 
@@ -18,8 +22,9 @@ def main(argv: list[str] | None = None) -> int:
                    help="읽을 내용 (기본: 노트 우선)")
     p.add_argument("--voice", help="음성 이름 일부 (예: Heami, Yuna)")
     p.add_argument("--output", help="출력 장치 이름 일부 (예: 헤드폰, AirPods). 없으면 기본 장치")
-    p.add_argument("--speed", type=float, default=1.0, help="속도 배수 0.5~2.0")
+    p.add_argument("--speed", type=float, default=1.0, choices=[1.0, 1.5, 2.0, 5.0], help="배속 1.0, 1.5, 2.0, 5.0")
     p.add_argument("--probe-ppt", action="store_true", help="PowerPoint 연동 상태를 한 번 확인")
+    p.add_argument("--self-check", action="store_true", help=argparse.SUPPRESS)  # 빌드 서버와 받는 사람 확인용
     args = p.parse_args(argv)
 
     for stream in (sys.stdout, sys.stderr):  # Windows 콘솔에서 한글이 깨지지 않게
@@ -66,10 +71,26 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         return _say(slides, args)
 
-    from .app import run
+    if args.self_check:
+        from .ui.app import self_check
 
-    run(args.file)
-    return 0
+        return self_check(_console_out())
+
+    from .ui.app import run
+
+    return run(args.file)
+
+
+def _console_out():
+    """창 실행 파일(Windows)에는 표준 출력이 없다. 실행한 터미널이 있으면 거기에 쓴다."""
+    if sys.stdout is not None:
+        return sys.stdout
+    if sys.platform == "win32":
+        import ctypes
+
+        if ctypes.windll.kernel32.AttachConsole(-1):  # ATTACH_PARENT_PROCESS
+            return open("CONOUT$", "w", encoding="utf-8")
+    return open(os.devnull, "w", encoding="utf-8")
 
 
 def _say(slides, args) -> int:

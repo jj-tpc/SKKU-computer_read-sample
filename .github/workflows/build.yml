@@ -1,0 +1,81 @@
+# 손으로 누를 때만 도는 빌드. Windows판과 macOS판(Apple Silicon)을 함께 만든다.
+# 공개 저장소의 무료 표준 러너를 쓴다. macos-latest는 가리키는 판이 바뀌므로 macos-15로 고정한다.
+name: build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - name: 의존성
+        run: python -m pip install --disable-pip-version-check -r requirements-dev.txt
+      - name: 자동 시험
+        run: python -m pytest -q tests
+      - name: 빌드
+        run: pyinstaller --noconfirm ppt_reader.spec
+      - name: --self-check
+        shell: pwsh
+        run: |
+          # 창 실행 파일이라 끝날 때까지 기다리며 출력을 파일로 받는다. 설정 폴더는 실제 앱 폴더를 쓰는지 본다.
+          $p = Start-Process -FilePath dist\PPTReader\PPTReader.exe -ArgumentList '--self-check' `
+               -Wait -PassThru -NoNewWindow -RedirectStandardOutput selfcheck.txt
+          Get-Content selfcheck.txt -Encoding utf8
+          if ($p.ExitCode -ne 0) { exit 1 }
+      - name: 묶기
+        shell: pwsh
+        run: |
+          if (Test-Path licenses) { Copy-Item -Recurse licenses dist\PPTReader\licenses }
+          if (Test-Path handoff\windows.txt) { Copy-Item handoff\windows.txt "dist\PPTReader\먼저 읽어 주세요.txt" }
+          Compress-Archive -Path dist\PPTReader -DestinationPath PPTReader-windows.zip
+      - uses: actions/upload-artifact@v7
+        with:
+          path: PPTReader-windows.zip
+          archive: false
+
+  macos:
+    runs-on: macos-15  # arm64
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - name: 의존성
+        run: python -m pip install --disable-pip-version-check -r requirements-dev.txt
+      - name: 자동 시험
+        run: python -m pytest -q tests
+      - name: 빌드
+        run: pyinstaller --noconfirm ppt_reader.spec
+      - name: --self-check
+        run: dist/PPTReader.app/Contents/MacOS/PPTReader --self-check
+      - name: 서명과 아키텍처
+        run: |
+          codesign --verify --deep --strict dist/PPTReader.app
+          codesign -dv dist/PPTReader.app 2>&1 | grep -E "Identifier|Format|Signature"
+          archs=$(lipo -archs dist/PPTReader.app/Contents/MacOS/PPTReader)
+          echo "아키텍처: $archs"
+          test "$archs" = "arm64"
+      - name: 화면 시험(가짜 전체 화면 쇼 위)
+        run: |
+          brew install cliclick
+          python tools/mac_screen_test.py run dist/PPTReader.app shots
+      - name: 묶기
+        run: ditto -c -k --keepParent dist/PPTReader.app PPTReader-macos-arm64.zip
+      - uses: actions/upload-artifact@v7
+        with:
+          path: PPTReader-macos-arm64.zip
+          archive: false
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: macos-screen-test
+          path: shots/
+          if-no-files-found: ignore

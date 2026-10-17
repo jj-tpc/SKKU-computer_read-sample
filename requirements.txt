@@ -1,2 +1,8 @@
 python-pptx>=1.0
+PySide6-Essentials==6.11.*
+PySide6-Addons==6.11.*
+anthropic>=1.15
+openai>=3.31
+google-genai>=2.31
 pywin32>=306; sys_platform == "win32"
+pyobjc-framework-Cocoa>=12.1; sys_platform == "darwin"
