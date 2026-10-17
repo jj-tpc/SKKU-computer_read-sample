@@ -111,3 +111,25 @@ def test_dog_frames_follow_pose(qtbot):
     w.tick(0.3)
     assert w._cell()[:2] == (4, 3) and w._cell()[2] >= 0
     w.close()
+
+
+def test_notice_and_shake(qtbot, controller):
+    orb = controller.orb
+    controller.session.on_notice("PowerPoint 연결이 끊겼어요")
+    rect = orb._notice_rect()
+    assert orb.mask().contains(rect.center().toPoint())  # 알림 줄 자리는 보인다
+    assert rect.right() < orb_mod.CENTER.x() - orb_mod.R and rect.bottom() < orb_mod.CENTER.y()  # 원 버튼 왼쪽 위
+    orb.tick(6.1, QPoint(-9999, -9999))
+    assert orb._notice == "" and not orb.mask().contains(rect.center().toPoint())  # 6초 뒤 사라짐
+    orb.shake()
+    orb.grab()  # 흔들리는 중에도 그리기가 된다
+
+
+def test_dog_waits_when_cursor_over_orb(qtbot, controller, monkeypatch):
+    center = controller.orb.orb_center_global()
+    monkeypatch.setattr(app_mod.QCursor, "pos", staticmethod(lambda: center))
+    for _ in range(90):
+        controller._frame()
+    spot = app_mod.wait_spot((center.x(), center.y()), controller._area)
+    assert controller.follower.pos == pytest.approx(spot, abs=3)
+    assert controller.dog.pos().x() == pytest.approx(spot[0], abs=3)

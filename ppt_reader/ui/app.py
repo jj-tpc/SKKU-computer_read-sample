@@ -7,23 +7,37 @@ import threading
 import time
 from typing import Callable
 
-from PySide6.QtCore import QObject, QTimer, qVersion
+from PySide6.QtCore import QObject, QRect, QTimer, qVersion
 from PySide6.QtGui import QCursor, QGuiApplication, QScreen
 from PySide6.QtWidgets import QApplication, QMessageBox
 
-from ..session import Session
+from ..follow import Area, Follower, wait_spot
+from ..session import READING, SPEAKING, THINKING, Session
 from ..settings import DOGS, Settings, app_folder
 from ..slides import to_speech
 from ..voice.cache import sentence_plan
 from ..voice.cloud import cloud_engine
-from . import platform_mac, theme
-from .dog import FEET_Y, FRAMES, SWEAT_ROW, DogWindow, load_sheet
-from .orb import R, OrbWindow, corner_center
+from . import platform_mac, platform_win, theme
+from .dog import FRAMES, SWEAT_ROW, DogWindow, load_sheet
+from .orb import OrbWindow, corner_center
 from .qtcore import MainThreadInvoker, QtClock
 
 APP_TITLE = "PPT 읽어주기"
 FRAME_MS = 33  # 강아지와 원 버튼을 함께 그리는 타이머(약 30fps)
 HAPPY_SECONDS = 1.5
+MONITOR_CHECK_MS = 1000  # "쇼가 뜬 모니터 따라가기"일 때 쇼 창의 모니터를 다시 보는 간격
+
+
+def screen_for_native_rect(rect: tuple[int, int, int, int]) -> QScreen | None:
+    """Windows 모니터 사각형(실제 픽셀)에 맞는 Qt 화면. Qt는 화면 위치를 실제 픽셀 그대로 두고 크기만 배율로 나눈다."""
+    left, top, right, bottom = rect
+    cx, cy = (left + right) // 2, (top + bottom) // 2
+    for screen in QGuiApplication.screens():
+        g, dpr = screen.geometry(), screen.devicePixelRatio()
+        native = QRect(g.x(), g.y(), round(g.width() * dpr), round(g.height() * dpr))
+        if (g.x(), g.y()) == (left, top) or native.contains(cx, cy):
+            return screen
+    return None
 
 
 class Controller(QObject):
@@ -41,55 +55,87 @@ class Controller(QObject):
         self.dog = DogWindow(settings["dog"])
         self.orb = OrbWindow(self.on_action)
         self.orb.set_speed(settings["speed"])
+        self.follower = Follower()
+        self._screen_now: QScreen | None = None
+        self._area = Area(0, 0, 1, 1)
         self._happy_until = 0.0
         self._last = time.monotonic()
         self._timer = QTimer(self)
         self._timer.setInterval(FRAME_MS)
         self._timer.timeout.connect(self._frame)
+        self._monitor_timer = QTimer(self)
+        self._monitor_timer.setInterval(MONITOR_CHECK_MS)
+        self._monitor_timer.timeout.connect(self._place)
         session.on_state = self._on_state
         session.on_pose = self._on_pose
         session.on_message = self._on_message
+        session.on_notice = self.orb.notify
         session.on_deck = lambda _deck: self.start_presynth()
         session.on_script = self._on_script
 
     def start(self) -> None:
         self._place()
+        orb = self.orb.orb_center_global()
+        self.follower.pos = wait_spot((orb.x(), orb.y()), self._area)
+        self.dog.move(*map(round, self.follower.pos))
         if self.settings["dog_visible"]:
             self.dog.show()
         self.orb.show()
         self.orb.raise_()  # 원 버튼 묶음은 늘 강아지보다 위
         self._timer.start()
+        self._monitor_timer.start()
         if self.settings.first_run:
             self._on_pose("happy")
 
     def _screen(self) -> QScreen:
+        """설정의 원 버튼 모니터. 쇼 따라가기면 쇼 창이 있는 모니터, 모르면 주 모니터(macOS는 늘 주 모니터)."""
         name = self.settings["monitor"]
+        if name == "follow":
+            rect = platform_win.show_monitor_rect()
+            found = screen_for_native_rect(rect) if rect else None
+            return found or (self._screen_now if self._screen_now in QGuiApplication.screens() else None)                 or QGuiApplication.primaryScreen()
         for screen in QGuiApplication.screens():
-            if name != "follow" and screen.name() == name:
+            if screen.name() == name:
                 return screen
         return QGuiApplication.primaryScreen()
 
     def _place(self) -> None:
-        available = self._screen().availableGeometry()
+        screen = self._screen()
+        available = screen.availableGeometry()
+        area = Area(available.x(), available.y(), available.width(), available.height())
+        if screen is self._screen_now and area == self._area:
+            return
+        self._screen_now, self._area = screen, area
         self.orb.place(available)
-        c = corner_center(available)
-        # 원 버튼 왼쪽, 위성 버튼 호 바깥에 앉아 기다린다
-        self.dog.move(c.x() - 300, c.y() + R - FEET_Y)
 
     def _frame(self) -> None:
         now = time.monotonic()
         dt, self._last = min(0.1, now - self._last), now
+        cursor = QCursor.pos()
         frame = self.pipeline.frame() if self.pipeline is not None else None
-        if frame is not None and frame.speaking:
-            self.dog.set_pose("talk")
-            self.dog.mouth = frame.mouth
+        speaking = frame is not None and frame.speaking
+        state = self.session.state
+        orb = self.orb.orb_center_global()
+        base = self.follower.update(now, dt, (cursor.x(), cursor.y()), self._area, (orb.x(), orb.y()),
+                                    self.orb.is_over(cursor), stay=state in (THINKING, SPEAKING))
+        if now < self._happy_until:
+            pose = "happy"
+        elif state == THINKING:
+            pose = "think"
+        elif speaking and not (state == READING and self.follower.moving):
+            pose = "talk"  # 대본을 읽는 동안에는 따라가며 걷고, 멈추면 말하는 입을 한다
         else:
-            self.dog.set_pose("happy" if now < self._happy_until else "sit")
-        level, tone = (frame.level, frame.tone) if frame is not None and frame.speaking else (0.0, 0.5)
+            pose = base
+        self.dog.set_pose(pose)
+        if speaking:
+            self.dog.mouth = frame.mouth
+        self.dog.facing_left = self.follower.facing_left
+        self.dog.move(*map(round, self.follower.pos))
+        level, tone = (frame.level, frame.tone) if speaking else (0.0, 0.5)
         self.orb.level += (level - self.orb.level) * 0.35
         self.orb.tone += (tone - self.orb.tone) * 0.05  # 높낮이 느낌은 천천히 따라간다
         self.dog.tick(dt)
-        self.orb.tick(dt, QCursor.pos())
+        self.orb.tick(dt, cursor)
 
     def _on_state(self, state: str) -> None:
         self.orb.set_state(state)
@@ -146,6 +192,7 @@ class Controller(QObject):
     def quit(self) -> None:
         """[끝내기]: 읽기 정지 → 미리 만들기 취소 → 연동 닫기 → 설정 저장 → 종료."""
         self._timer.stop()
+        self._monitor_timer.stop()
         if self.pipeline is not None:
             self.pipeline.stop()
         if self.presynth is not None:

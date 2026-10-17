@@ -1,4 +1,4 @@
-"""원 버튼 묶음 창: 원 버튼(코랄 C 음파 링)과 위성 버튼 다섯 개.
+"""원 버튼 묶음 창: 원 버튼(코랄 C 음파 링), 위성 버튼 다섯 개, 알림 줄.
 
 창 하나에 함께 그리고, 버튼 자리에만 마스크를 건다. 마스크 밖(투명한 곳)의 클릭은 아래 쇼로 간다.
 """
@@ -9,7 +9,7 @@ import random
 from typing import Callable
 
 from PySide6.QtCore import QPoint, QPointF, QRect, QRectF, Qt
-from PySide6.QtGui import (QColor, QFont, QLinearGradient, QPainter, QPainterPath, QPen, QPolygonF,
+from PySide6.QtGui import (QColor, QFont, QFontMetrics, QLinearGradient, QPainter, QPainterPath, QPen, QPolygonF,
                            QRadialGradient, QRegion)
 from PySide6.QtWidgets import QToolTip
 
@@ -30,6 +30,10 @@ COLLAPSE_AFTER = 4.0
 CENTER = QPointF(470, 200)
 WIN_W = int(CENTER.x()) + R + MARGIN
 WIN_H = int(CENTER.y()) + R + MARGIN
+
+NOTICE_SECONDS = 6.0
+NOTICE_MAX_W = 380
+SHAKE_SECONDS = 0.4
 
 SATELLITES = ["ask", "read", "speed", "settings", "quit"]
 TIPS = {"ask": "질문하기", "speed": "배속 (누를 때마다 바뀜)", "settings": "설정", "quit": "끝내기"}
@@ -84,6 +88,11 @@ class OrbWindow(OverlayWindow):
         self._hover = -1  # 마우스가 올라간 위성 버튼 차례, 없으면 -1
         rnd = random.Random(7)
         self._noise = [rnd.random() for _ in range(BARS)]
+        self._notice = ""
+        self._notice_from = -1e9
+        self._shake_from = -1e9
+        self._notice_font = QFont(theme.FONT_FAMILY)
+        self._notice_font.setPixelSize(13)
         self._update_mask()
 
     # ------------------------------------------------------------ 바깥에서 부르기
@@ -100,6 +109,23 @@ class OrbWindow(OverlayWindow):
 
     def set_speed(self, speed: float) -> None:
         self.speed = speed
+
+    def notify(self, text: str) -> None:
+        """알림 줄: 원 버튼 왼쪽 위에 6초 동안 띄운다. 청중도 보므로 문구는 짧게 원인과 할 일만 쓴다."""
+        self._notice = text
+        self._notice_from = self._t
+        self._update_mask()
+
+    def shake(self) -> None:
+        """오류일 때 0.4초 동안 좌우로 살짝 흔들린다. 색은 바꾸지 않는다."""
+        self._shake_from = self._t
+
+    def is_over(self, cursor: QPoint) -> bool:
+        """커서가 원 버튼이나 보이는 위성 버튼 위에 있나. 그동안 강아지는 원 버튼 옆에서 기다린다."""
+        local = QPointF(self.mapFromGlobal(cursor))
+        if _dist(local, CENTER) <= R + BAR_GAP + 8:
+            return True
+        return self.is_open and any(_dist(local, self._target(i)) <= SAT_D / 2 + 6 for i in range(len(SATELLITES)))
 
     def expand(self) -> None:
         if not self.is_open:
@@ -118,6 +144,9 @@ class OrbWindow(OverlayWindow):
         self._t += dt
         if self._anim_from is not None and self._t - self._anim_from > OPEN_TIME + STAGGER * len(SATELLITES):
             self._anim_from = None
+            self._update_mask()
+        if self._notice and self._t - self._notice_from > NOTICE_SECONDS:
+            self._notice = ""
             self._update_mask()
         local = QPointF(self.mapFromGlobal(cursor))
         on_orb = _dist(local, CENTER) <= R + BAR_GAP
@@ -176,7 +205,16 @@ class OrbWindow(OverlayWindow):
                 h = SAT_D // 2 + 10  # 그림자까지
                 region = region.united(QRegion(QRect(t.x() - h, t.y() - h, 2 * h, 2 * h + 4),
                                                QRegion.RegionType.Ellipse))
+        if self._notice:
+            region = region.united(QRegion(self._notice_rect().toAlignedRect().adjusted(-2, -2, 2, 2)))
         self.setMask(region)
+
+    def _notice_rect(self) -> QRectF:
+        fm = QFontMetrics(self._notice_font)
+        text = fm.boundingRect(QRect(0, 0, NOTICE_MAX_W - 24, 1000), Qt.TextFlag.TextWordWrap.value, self._notice)
+        w, h = text.width() + 24, text.height() + 16
+        right, bottom = CENTER.x() - R - 10, CENTER.y() - R - 12
+        return QRectF(right - w, bottom - h, w, h)
 
     def _show_tip(self) -> None:
         if self._hover < 0:
@@ -223,8 +261,32 @@ class OrbWindow(OverlayWindow):
             k = self._progress(i)
             if k > 0.001:
                 self._paint_satellite(p, i, k)
+        p.save()
+        e = self._t - self._shake_from
+        if 0 <= e < SHAKE_SECONDS:
+            p.translate(4 * math.sin(e * 2 * math.pi * 12) * (1 - e / SHAKE_SECONDS), 0)
         self._paint_orb(p)
+        p.restore()
+        if self._notice:
+            self._paint_notice(p)
         p.end()
+
+    def _paint_notice(self, p: QPainter) -> None:
+        e = self._t - self._notice_from
+        p.save()
+        p.setOpacity(min(1.0, e / 0.2, max(0.0, (NOTICE_SECONDS - e) / 0.3)))
+        rect = self._notice_rect()
+        bg = QColor(theme.OCEAN_800)
+        bg.setAlphaF(0.94)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(bg)
+        p.drawRoundedRect(rect, 10, 10)
+        p.setPen(QColor("white"))
+        p.setFont(self._notice_font)
+        flags = (Qt.TextFlag.TextWordWrap.value | Qt.TextFlag.TextDontClip.value | Qt.AlignmentFlag.AlignLeft.value
+                 | Qt.AlignmentFlag.AlignVCenter.value)
+        p.drawText(rect.adjusted(12, 0, -12, 0), flags, self._notice)
+        p.restore()
 
     def _paint_satellite(self, p: QPainter, i: int, k: float) -> None:
         target = self._target(i)
