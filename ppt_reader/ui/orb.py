@@ -422,7 +422,7 @@ class QuestionWindow(QWidget):
 
     def __init__(self, on_send: Callable[[str, str], None], on_close: Callable[[], None]):
         super().__init__(None, Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint
-                         | Qt.WindowType.Tool)
+                         | Qt.WindowType.Tool | Qt.WindowType.NoDropShadowWindowHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_MacAlwaysShowToolWindow)
         self.on_send = on_send
@@ -486,6 +486,7 @@ class QuestionWindow(QWidget):
     def close_box(self) -> None:
         platform_mac.trace_state("question closing")
         self.hide()
+        platform_mac.order_out(self)
         self.on_close()
 
     def set_text(self, text: str) -> None:

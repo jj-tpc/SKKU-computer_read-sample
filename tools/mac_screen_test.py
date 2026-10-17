@@ -171,6 +171,10 @@ def run(app_path: str, out_dir: str) -> int:
         still = question_open(closed, orb, scale)
         note(f"{'FAIL' if still else 'OK  '} Esc로 질문창이 {'닫히지 않음' if still else '닫힘'}")
         ok = ok and not still
+        if still:  # 늦게 사라지는지, 입력이 더 와야 사라지는지 나눠 본다
+            time.sleep(3)
+            later = shot(out, "06a_question_closed_wait")
+            note(f"INFO 3초 더 기다린 뒤 질문창 {'남음' if question_open(later, orb, scale) else '닫힘'}")
         if still:  # 포커스 돌려주기는 따로 보려고 한 번 더 누른다
             cliclick("kp:esc")
             time.sleep(1)

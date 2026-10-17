@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 import sys
+import time
 
 # AppKit 값. pyobjc 판에 따라 이름이 없을 수 있어 숫자로 둔다.
 _NONACTIVATING_PANEL = 1 << 7
@@ -56,6 +57,8 @@ def float_over_fullscreen(widget) -> bool:
         win = _ns_window(widget)
         win.setStyleMask_(win.styleMask() | _NONACTIVATING_PANEL)
         win.setHidesOnDeactivate_(False)
+        # 그림자는 Qt가 그린다. 시스템 그림자는 투명 창의 옛 모양으로 남아 강아지 뒤에 유령 그림자가 생겼다
+        win.setHasShadow_(False)
         win.setCollectionBehavior_(_BEHAVIOR)
         win.setLevel_(_SCREEN_SAVER_LEVEL)
         win.orderFrontRegardless()
@@ -80,10 +83,23 @@ def make_key(widget) -> bool:
         return False
 
 
+_T0 = time.monotonic()
+
+
 def _trace(*parts) -> None:
     """질문창 포커스 진단. 환경 변수 PPT_READER_TRACE가 있을 때만 표준 오류에 쓴다(빌드 서버 화면 시험이 켬)."""
     if os.environ.get("PPT_READER_TRACE"):
-        print("[mac-focus]", *parts, file=sys.stderr, flush=True)
+        print(f"[mac-focus {time.monotonic() - _T0:7.2f}]", *parts, file=sys.stderr, flush=True)
+
+
+def order_out(widget) -> None:
+    """질문창을 숨긴 뒤 화면에서 확실히 내린다. 빌드 서버에서 Qt가 숨긴 뒤에도 다음 입력까지 그림이 남았다."""
+    if not _cocoa():
+        return
+    try:
+        _ns_window(widget).orderOut_(None)
+    except Exception as e:
+        _trace("order_out error", repr(e))
 
 
 _last_other = None  # 마지막으로 본, 이 앱이 아닌 맨 앞 앱(보통 쇼)
@@ -157,9 +173,16 @@ def restore_front(app) -> None:
 
     macOS 14부터 활성화는 협력 방식이라, 이 앱이 먼저 활성을 넘겨줘야 다른 앱이 앞으로 온다.
     그래도 0.3초 뒤 이 앱이 활성이면 스스로 비활성화해 바로 앞의 앱에 넘긴다.
+    질문창이 화면에서 내려간 뒤에 넘기도록 50ms 미룬다.
     """
     if not _cocoa():
         return
+    from PySide6.QtCore import QTimer
+
+    QTimer.singleShot(50, lambda: _restore_now(app))
+
+
+def _restore_now(app) -> None:
     try:
         from AppKit import NSApplication, NSRunningApplication
         from PySide6.QtCore import QTimer

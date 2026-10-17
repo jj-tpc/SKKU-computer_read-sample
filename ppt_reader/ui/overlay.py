@@ -10,8 +10,10 @@ from PySide6.QtWidgets import QWidget
 
 from . import platform_mac
 
+# 그림자는 창마다 직접 그린다. 시스템 그림자(NoDropShadowWindowHint로 끔)는 macOS에서 투명 창의 옛 모양으로 남는다
 OVERLAY_FLAGS = (Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint
-                 | Qt.WindowType.Tool | Qt.WindowType.WindowDoesNotAcceptFocus)
+                 | Qt.WindowType.Tool | Qt.WindowType.WindowDoesNotAcceptFocus
+                 | Qt.WindowType.NoDropShadowWindowHint)
 
 
 class OverlayWindow(QWidget):
