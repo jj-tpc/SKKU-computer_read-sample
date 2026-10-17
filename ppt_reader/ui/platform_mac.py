@@ -92,14 +92,28 @@ def front_app():
 
 
 def restore_front(app) -> None:
-    """질문창을 열며 이 앱이 활성화됐으면, 앞서 맨 앞에 있던 앱을 다시 활성화해 쇼가 키 입력을 받게 한다."""
+    """질문창을 열며 이 앱이 활성화됐으면, 앞서 맨 앞에 있던 앱(쇼)을 다시 활성화해 쇼가 키 입력을 받게 한다.
+
+    macOS 14부터 활성화는 협력 방식이라, 이 앱이 먼저 활성을 넘겨줘야 다른 앱이 앞으로 온다.
+    그래도 0.3초 뒤 이 앱이 활성이면 스스로 비활성화해 바로 앞의 앱에 넘긴다.
+    """
     if app is None or not _cocoa():
         return
     try:
-        from AppKit import NSRunningApplication
+        from AppKit import NSApplication, NSRunningApplication
+        from PySide6.QtCore import QTimer
 
-        if NSRunningApplication.currentApplication().isActive():
-            app.activateWithOptions_(0)
+        me = NSRunningApplication.currentApplication()
+        if not me.isActive() or app.processIdentifier() == me.processIdentifier():
+            return
+        nsapp = NSApplication.sharedApplication()
+        if hasattr(nsapp, "yieldActivationToApplication_"):
+            nsapp.yieldActivationToApplication_(app)
+        if hasattr(app, "activateFromApplication_options_"):
+            app.activateFromApplication_options_(me, 0)
+        else:
+            app.activateWithOptions_(1 << 1)  # NSApplicationActivateIgnoringOtherApps
+        QTimer.singleShot(300, lambda: nsapp.deactivate() if me.isActive() else None)
     except Exception:
         pass
 
