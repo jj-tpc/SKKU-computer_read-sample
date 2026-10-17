@@ -124,6 +124,7 @@ handoff/                    받는 사람용 안내문: windows.txt, macos.txt
 .github/workflows/build.yml 손으로 누를 때만 도는 빌드
 tools/dog_sprites.py        강아지 스프라이트 생성기 (prototype/dog-sprites의 생성기를 정식으로 옮김)
 tools/make_sample.py        그대로
+tools/make_icon.py          실행 파일 아이콘 생성기. ui/icon.py 그림으로 assets/app.ico·app.icns를 만든다
 ppt_reader/
   __init__.py               __version__ = "2.0.0"
   __main__.py               명령줄. 옵션이 없으면 Qt 화면. --self-check 추가
@@ -156,7 +157,8 @@ ppt_reader/
     script_window.py        대본 창
     platform_win.py         Windows 창 보조(필요할 때만)
     platform_mac.py         macOS 창 보조(pyobjc)
-  assets/                   dog_shiba.png, dog_bichon.png, dog_beagle.png
+    icon.py                 앱 아이콘: 원 버튼이 쉴 때 모양. 48px 이하는 원과 흰 점만, 64px부터 둘레 막대까지
+  assets/                   dog_shiba.png, dog_bichon.png, dog_beagle.png, app.ico, app.icns
 tests/                      <tests>
 ```
 근거: 16, 19, 20.

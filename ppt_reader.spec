@@ -27,7 +27,9 @@ a.binaries = [b for b in a.binaries if _used(b)]
 a.datas = [d for d in a.datas if _used(d)]
 
 pyz = PYZ(a.pure)
-exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="PPTReader", console=False)
+# 아이콘은 tools/make_icon.py가 원 버튼 그림으로 만든다
+exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="PPTReader", console=False,
+          icon="ppt_reader/assets/app.ico" if sys.platform == "win32" else None)
 coll = COLLECT(exe, a.binaries, a.datas, name="PPTReader")
 
 if sys.platform == "darwin":
@@ -35,6 +37,7 @@ if sys.platform == "darwin":
         coll,
         name="PPTReader.app",
         bundle_identifier="local.pptreader",
+        icon="ppt_reader/assets/app.icns",
         info_plist={
             "CFBundleDisplayName": "PPT 읽어주기",
             "NSHighResolutionCapable": True,

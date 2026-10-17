@@ -282,3 +282,61 @@ def test_caption_states(qtbot, controller):
     assert controller.caption_view()[:3] == ("캡션 만드는 중", "warn", "2 / 5")
     controller.caption_state = ("done", 5, 5, "")
     assert controller.caption_view()[0] == "캡션 완료" and controller.caption_view()[4]
+
+
+def test_app_icon_is_orb(qtbot):
+    from ppt_reader.ui import icon
+
+    assert {16, 32, 256} <= {s.width() for s in icon.app_icon().availableSizes()}
+    for size in (32, 256):  # 작은 그림(원과 흰 점)과 큰 그림(막대까지)
+        img = icon.image(size)
+        mid = size // 2
+        assert img.pixelColor(mid, mid).name() == "#ffffff"  # 가운데 흰 점
+        coral = img.pixelColor(mid, mid - size // 4)
+        assert coral.alpha() == 255 and coral.red() > 200 and coral.green() < 160
+        assert img.pixelColor(1, 1).alpha() == 0  # 모서리는 투명
+
+
+def _png_size(data: bytes) -> int:
+    import struct
+
+    assert data[:8] == b"\x89PNG\r\n\x1a\n"
+    return struct.unpack_from(">I", data, 16)[0]
+
+
+def _ico_sizes(data: bytes) -> list[int]:
+    import struct
+
+    _, kind, n = struct.unpack_from("<HHH", data)
+    assert kind == 1
+    sizes = []
+    for i in range(n):
+        w, _, _, _, _, bpp, length, offset = struct.unpack_from("<BBBBHHII", data, 6 + 16 * i)
+        assert bpp == 32 and _png_size(data[offset:offset + length]) == (w or 256)
+        sizes.append(w or 256)
+    return sizes
+
+
+def _icns_kinds(data: bytes) -> dict[bytes, int]:
+    import struct
+
+    assert data[:4] == b"icns" and struct.unpack_from(">I", data, 4)[0] == len(data)
+    kinds, at = {}, 8
+    while at < len(data):
+        kind, length = data[at:at + 4], struct.unpack_from(">I", data, at + 4)[0]
+        kinds[kind] = _png_size(data[at + 8:at + length])
+        at += length
+    assert at == len(data)
+    return kinds
+
+
+def test_icon_files(qtbot):
+    from ppt_reader.ui import icon
+    from tools import make_icon
+
+    expected = dict(make_icon.ICNS_TYPES)
+    assert _ico_sizes(make_icon.ico_bytes()) == list(icon.SIZES)
+    assert _icns_kinds(make_icon.icns_bytes()) == expected
+    # 빌드가 쓰는 파일도 있고 읽힌다(그림을 바꾸면 python tools/make_icon.py로 다시 만든다)
+    assert _ico_sizes((make_icon.OUT / "app.ico").read_bytes()) == list(icon.SIZES)
+    assert _icns_kinds((make_icon.OUT / "app.icns").read_bytes()) == expected

@@ -24,6 +24,7 @@ from ..voice.cloud import ElevenLabsEngine, VoiceError, cloud_engine
 from . import platform_mac, platform_win, theme
 from .bubble import BubbleWindow
 from .dog import FRAMES, SWEAT_ROW, DogWindow, load_sheet
+from .icon import app_icon
 from .orb import OrbWindow, QuestionWindow, corner_center
 from .qtcore import MainThreadInvoker, QtClock
 
@@ -619,9 +620,11 @@ class Controller(QObject):
 def _make_app() -> QApplication:
     # 음높이를 지키며 배속하려면 FFmpeg 백엔드여야 한다(Windows 자체 백엔드는 못 한다)
     os.environ.setdefault("QT_MEDIA_BACKEND", "ffmpeg")
+    platform_win.set_app_id()
     app = QApplication.instance() or QApplication(sys.argv[:1])
     app.setQuitOnLastWindowClosed(False)  # 보통 창(설정 창)을 닫아도 강아지와 원 버튼은 남는다
     app.setStyleSheet(theme.STYLESHEET)
+    app.setWindowIcon(app_icon())
     platform_mac.become_accessory()
     return app
 

@@ -94,6 +94,7 @@ python main.py --probe-ppt                         # PowerPoint 연동 상태 �
   실제 API 시험은 `PPT_READER_LIVE_CLAUDE`, `PPT_READER_LIVE_OPENAI`, `PPT_READER_LIVE_GEMINI`, `PPT_READER_LIVE_ELEVENLABS`에 키를 넣었을 때만 돕니다.
 - 실행 파일: GitHub Actions의 `build` 워크플로를 손으로 돌립니다(`gh workflow run build.yml --ref <브랜치>`). Windows판과 macOS판(Apple Silicon)을 함께 만들고, `--self-check`, 서명·arm64 검사, 가짜 전체 화면 위 화면 시험을 합니다.
 - 로컬 빌드: `pyinstaller --noconfirm ppt_reader.spec` (Windows는 Windows에서).
+- 앱 아이콘: 원 버튼 그림(`ppt_reader/ui/icon.py`)을 바꾸면 `python tools/make_icon.py`로 실행 파일 아이콘(`app.ico`, `app.icns`)을 다시 만듭니다.
 
 ## 구조
 
@@ -109,9 +110,9 @@ ppt_reader/
   captions.py           그림 꺼내기와 캡션
   voice/                합성(운영체제·클라우드), 신호, 재생, 문장 줄, 저장
   llm/                  Claude·OpenAI·Gemini 어댑터
-  ui/                   Qt 화면: 강아지, 원 버튼, 말풍선, 설정 창, 대본 창
-  assets/               강아지 스프라이트
-tools/                  스프라이트 생성기, 예제 자료, macOS 화면 시험
+  ui/                   Qt 화면: 강아지, 원 버튼, 말풍선, 설정 창, 대본 창, 앱 아이콘
+  assets/               강아지 스프라이트, 실행 파일 아이콘
+tools/                  스프라이트·아이콘 생성기, 예제 자료, macOS 화면 시험
 licenses/               오픈 소스 라이선스
 handoff/                받는 사람용 안내문
 ```
