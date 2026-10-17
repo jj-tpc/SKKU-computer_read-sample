@@ -105,5 +105,5 @@ def start_stream(provider: Provider | Callable[[], Provider], req: Request, on_c
             if not cancel.is_set():
                 on_error(LLMError("other", error_text(e, getattr(provider, "key", ""))))
 
-    threading.Thread(target=work, name=f"llm-{provider.name}", daemon=True).start()
+    threading.Thread(target=work, name=f"llm-{getattr(provider, 'name', 'stream')}", daemon=True).start()
     return cancel

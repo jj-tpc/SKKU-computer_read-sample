@@ -198,6 +198,23 @@ def test_start_stream_runs_in_thread_and_reports():
     assert events == ["가", "나", "network"]
 
 
+def test_start_stream_accepts_factory():
+    """앱은 SDK를 작업 스레드에서 불러오려고 제공자 대신 만드는 함수를 넘긴다."""
+    events = []
+    done = threading.Event()
+
+    class P:
+        name, key = "fake", "k"
+
+        def stream(self, req, cancel):
+            yield "답"
+
+    start_stream(lambda: P(), REQ, events.append, lambda: (events.append("done"), done.set()),
+                 lambda e: (events.append(e.kind), done.set()))
+    assert done.wait(3)
+    assert events == ["답", "done"]
+
+
 def test_models_and_defaults_match_settings():
     from ppt_reader.settings import DEFAULT_MODELS
 
