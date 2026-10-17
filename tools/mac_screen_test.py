@@ -99,8 +99,10 @@ def run(app_path: str, out_dir: str) -> int:
     note(f"가짜 쇼 맨 앞 앱: {show_front}")
 
     exe = Path(app_path) / "Contents" / "MacOS" / "PPTReader"
-    env = dict(os.environ, PPT_READER_HOME=tempfile.mkdtemp(prefix="ppt_home_"))
-    app = subprocess.Popen([str(exe), str(ROOT / "sample" / "sample_presentation.pptx")], env=env)
+    env = dict(os.environ, PPT_READER_HOME=tempfile.mkdtemp(prefix="ppt_home_"), PPT_READER_TRACE="1")
+    app_log = open(out / "app_stderr.txt", "w", encoding="utf-8")
+    app = subprocess.Popen([str(exe), str(ROOT / "sample" / "sample_presentation.pptx")], env=env,
+                           stdout=app_log, stderr=subprocess.STDOUT)
     ok = True
     try:
         time.sleep(6)
@@ -157,6 +159,7 @@ def run(app_path: str, out_dir: str) -> int:
     finally:
         app.terminate()
         show.terminate()
+        app_log.close()
         (out / "result.txt").write_text("\n".join(log) + "\n", encoding="utf-8")
     return 0 if ok else 1
 

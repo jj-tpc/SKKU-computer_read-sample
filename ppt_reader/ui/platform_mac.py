@@ -8,6 +8,7 @@ pyobjc가 없거나 실패하면 Qt 기본 동작으로 두고 False를 돌려�
 """
 from __future__ import annotations
 
+import os
 import sys
 
 # AppKit 값. pyobjc 판에 따라 이름이 없을 수 있어 숫자로 둔다.
@@ -79,15 +80,27 @@ def make_key(widget) -> bool:
         return False
 
 
+def _trace(*parts) -> None:
+    """질문창 포커스 진단. 환경 변수 PPT_READER_TRACE가 있을 때만 표준 오류에 쓴다(빌드 서버 화면 시험이 켬)."""
+    if os.environ.get("PPT_READER_TRACE"):
+        print("[mac-focus]", *parts, file=sys.stderr, flush=True)
+
+
 def front_app():
     """질문창을 열기 전에 맨 앞에 있던 앱(보통 PowerPoint). 닫을 때 다시 앞으로 돌린다."""
     if not _cocoa():
         return None
     try:
-        from AppKit import NSWorkspace
+        from AppKit import NSRunningApplication, NSWorkspace
 
-        return NSWorkspace.sharedWorkspace().frontmostApplication()
-    except Exception:
+        app = NSWorkspace.sharedWorkspace().frontmostApplication()
+        me = NSRunningApplication.currentApplication()
+        _trace("front_app", app.localizedName() if app else None, "me_active", me.isActive())
+        if app is not None and app.processIdentifier() == me.processIdentifier():
+            return None  # 이미 이 앱이 맨 앞이면 돌려줄 곳이 없다
+        return app
+    except Exception as e:
+        _trace("front_app error", repr(e))
         return None
 
 
@@ -97,25 +110,40 @@ def restore_front(app) -> None:
     macOS 14부터 활성화는 협력 방식이라, 이 앱이 먼저 활성을 넘겨줘야 다른 앱이 앞으로 온다.
     그래도 0.3초 뒤 이 앱이 활성이면 스스로 비활성화해 바로 앞의 앱에 넘긴다.
     """
-    if app is None or not _cocoa():
+    if not _cocoa():
         return
     try:
         from AppKit import NSApplication, NSRunningApplication
         from PySide6.QtCore import QTimer
 
         me = NSRunningApplication.currentApplication()
-        if not me.isActive() or app.processIdentifier() == me.processIdentifier():
-            return
         nsapp = NSApplication.sharedApplication()
+        _trace("restore", app.localizedName() if app else None, "me_active", me.isActive(),
+               "yield", hasattr(nsapp, "yieldActivationToApplication_"),
+               "activateFrom", hasattr(app, "activateFromApplication_options_") if app else None)
+        if not me.isActive():
+            return
+        if app is None:  # 기억한 앱이 없으면 비활성화해서 바로 앞의 앱에 넘긴다
+            nsapp.deactivate()
+            _trace("deactivated (no app)")
+            return
         if hasattr(nsapp, "yieldActivationToApplication_"):
             nsapp.yieldActivationToApplication_(app)
         if hasattr(app, "activateFromApplication_options_"):
-            app.activateFromApplication_options_(me, 0)
+            ok = app.activateFromApplication_options_(me, 0)
         else:
-            app.activateWithOptions_(1 << 1)  # NSApplicationActivateIgnoringOtherApps
-        QTimer.singleShot(300, lambda: nsapp.deactivate() if me.isActive() else None)
-    except Exception:
-        pass
+            ok = app.activateWithOptions_(1 << 1)  # NSApplicationActivateIgnoringOtherApps
+        _trace("activate returned", ok)
+
+        def later():
+            _trace("after 0.3s me_active", me.isActive(), "target_active", app.isActive())
+            if me.isActive():
+                nsapp.deactivate()
+                _trace("deactivated")
+
+        QTimer.singleShot(300, later)
+    except Exception as e:
+        _trace("restore error", repr(e))
 
 
 def check(widget) -> tuple[bool, str]:
