@@ -199,7 +199,7 @@ def test_bubble_streams_words(qtbot, controller):
 
 def test_first_run_opens_settings(qtbot, controller, app_home):
     w = controller.settings_window
-    assert w is not None and w.isVisible() and w.windowTitle() == "설정 — PPT 읽어주기"
+    assert w is not None and w.isVisible() and w.windowTitle() == "설정 — 슬라이독"
     assert not Settings(app_home).first_run  # 처음 실행 표시를 저장했다
     # 파일이 열려 있으니 아직 안 된 첫 카드(질의응답)만 펼친다
     assert [c.is_open for c in w.cards] == [False, False, True, False]

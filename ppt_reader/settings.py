@@ -14,7 +14,8 @@ from pathlib import Path
 
 from .slides import SOURCES
 
-APP_FOLDER = "PPT읽어주기"
+APP_FOLDER = "슬라이독"
+OLD_APP_FOLDER = "PPT읽어주기"  # 이름을 바꾸기 전 폴더. 처음 켤 때 새 이름으로 옮긴다
 OLD_SETTINGS = Path.home() / ".ppt_reader_settings.json"
 VERSION = 2
 SPEEDS = (1.0, 1.5, 2.0, 5.0)
@@ -34,10 +35,26 @@ def app_folder() -> Path:
     if env:
         return Path(env)
     if sys.platform == "win32":
-        return Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming") / APP_FOLDER
-    if sys.platform == "darwin":
-        return Path.home() / "Library" / "Application Support" / APP_FOLDER
-    return Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / APP_FOLDER
+        base = Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming")
+    elif sys.platform == "darwin":
+        base = Path.home() / "Library" / "Application Support"
+    else:
+        base = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
+    return _move_old_folder(base / OLD_APP_FOLDER, base / APP_FOLDER)
+
+
+def _move_old_folder(old: Path, new: Path) -> Path:
+    """옛 이름 폴더(설정, 고친 대본, 캡션, 대본 소리)를 새 이름으로 바꾼다. 새 폴더가 이미 있으면 건드리지 않는다.
+
+    바꾸지 못하면(옛 판이 켜져 있어 파일이 열려 있는 등) 이번에는 옛 폴더를 그대로 쓰고, 다음에 켤 때 다시 한다.
+    """
+    if new.exists() or not old.is_dir():
+        return new
+    try:
+        old.rename(new)
+        return new
+    except OSError:
+        return old
 
 
 def defaults() -> dict:

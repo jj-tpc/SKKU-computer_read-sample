@@ -15,7 +15,7 @@ from ..slides import SOURCES
 from ..voice.cloud import GEMINI_VOICES
 from .widgets import Card, Chip, CoralBar, FitStack, Segmented, SittingDog, Toggle, button, field, label, row
 
-TITLE = "설정 — PPT 읽어주기"
+TITLE = "설정 — 슬라이독"
 DOG_INFO = {"shiba": ("시바", "치비 시바"), "bichon": ("비숑", "몽실 비숑"), "beagle": ("비글", "날씬 비글")}
 PROVIDER_LABELS = [("claude", "Claude"), ("openai", "OpenAI"), ("gemini", "Gemini")]
 ENGINE_LABELS = [("os", "운영체제 음성"), ("elevenlabs", "ElevenLabs"), ("gemini", "Gemini")]

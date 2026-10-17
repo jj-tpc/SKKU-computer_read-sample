@@ -1,4 +1,6 @@
-# PPT 읽어주기
+# 슬라이독 (Slidog)
+
+> 발표를 읽어 주고, 질문에 답하는 강아지. 옛 이름은 「PPT 읽어주기」입니다.
 
 교실 발표에서 컴퓨터가 "AI 발표자" 역할을 하는 프로그램입니다. 화면 위의 도트 강아지가 마우스 커서를 따라다니며 슬라이드 대본을 소리 내어 읽고, 발표가 끝나면 청중의 질문에 발표 자료를 근거로 답합니다.
 **Windows 10/11과 macOS 15 이상(Apple Silicon)**에서 같은 코드로 동작합니다.
@@ -30,8 +32,8 @@
 
 ### 실행 파일(권장)
 GitHub Actions에서 만든 zip을 받아 압축을 풀고 안의 "먼저 읽어 주세요.txt"를 따릅니다.
-- Windows: `PPTReader\PPTReader.exe`
-- macOS: `PPTReader.app`(서명이 없어 처음에 [그래도 열기]가 필요합니다)
+- Windows: `Slidog\Slidog.exe`
+- macOS: `Slidog.app`(서명이 없어 처음에 [그래도 열기]가 필요합니다)
 
 ### 소스로 실행
 [Python 3.10 이상](https://www.python.org/downloads/)이 필요합니다.
@@ -77,7 +79,7 @@ GitHub Actions에서 만든 zip을 받아 압축을 풀고 안의 "먼저 읽어
 | "답이 늦어요" | 질문창 위의 생각 깊이를 low로 낮춥니다. |
 | 연동했는데 "파일 위치를 알 수 없습니다" | PowerPoint 파일을 먼저 저장합니다. OneDrive 파일은 동기화 폴더에 있어야 합니다. |
 | `.ppt` 파일이 안 열림 | PowerPoint에서 다른 이름으로 저장 → `.pptx`로 바꿉니다. |
-| macOS에서 쇼 위에 안 보임 | 터미널에서 `PPTReader.app/Contents/MacOS/PPTReader --self-check`를 실행해 "macOS 보조" 줄이 OK인지 봅니다. |
+| macOS에서 쇼 위에 안 보임 | 터미널에서 `Slidog.app/Contents/MacOS/Slidog --self-check`를 실행해 "macOS 보조" 줄이 OK인지 봅니다. |
 
 명령줄 도구(화면 없이 돕니다):
 ```bash
@@ -117,5 +119,6 @@ licenses/               오픈 소스 라이선스
 handoff/                받는 사람용 안내문
 ```
 
-설정·고친 대본·캡션·대본 소리는 운영체제 앱 폴더에 저장됩니다(Windows `%APPDATA%\PPT읽어주기`, macOS `~/Library/Application Support/PPT읽어주기`).
+설정·고친 대본·캡션·대본 소리는 운영체제 앱 폴더에 저장됩니다(Windows `%APPDATA%\슬라이독`, macOS `~/Library/Application Support/슬라이독`).
+옛 이름(`PPT읽어주기`) 폴더가 있으면 처음 켤 때 새 이름으로 옮겨 옵니다.
 자세한 명세는 `PROMPT-character-qa.md`(이번 판), `PROMPT.md`(v1.0)에 있습니다.

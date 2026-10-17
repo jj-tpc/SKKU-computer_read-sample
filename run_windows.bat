@@ -1,5 +1,5 @@
 @echo off
-rem PPT Reader - Windows launcher. Double-click to run.
+rem Slidog - Windows launcher. Double-click to run.
 rem First run: creates .venv and installs requirements (internet needed once).
 cd /d "%~dp0"
 

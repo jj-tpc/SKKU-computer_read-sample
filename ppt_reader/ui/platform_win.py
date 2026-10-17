@@ -11,7 +11,7 @@ import sys
 from ctypes import wintypes
 
 SHOW_CLASS = "screenClass"  # PowerPoint 슬라이드 쇼 창. GUI 툴킷 조사에서 확인했다
-APP_ID = "local.pptreader"  # macOS 번들 식별자와 같게 둔다
+APP_ID = "local.slidog"  # macOS 번들 식별자와 같게 둔다
 _MONITOR_DEFAULTTONULL = 0
 
 

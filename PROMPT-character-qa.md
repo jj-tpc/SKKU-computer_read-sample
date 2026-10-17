@@ -5,6 +5,8 @@
 - 화면 구석의 원 버튼
 - LLM 질의응답
 
+이번 판의 프로그램 이름은 **슬라이독**(영문과 파일 이름은 `Slidog`)이다. 옛 이름 「PPT 읽어주기」의 설정 폴더는 처음 켤 때 새 이름으로 옮긴다.
+
 이 저장소를 연 코딩 에이전트(Claude Code 등)에게 아래 코드 블록 안의 내용 전체를 붙여 넣으세요. 사람이 읽어도 됩니다.
 
 - 대상 에이전트: 이 저장소에서 파일 쓰기와 셸 실행이 가능한 코딩 에이전트
@@ -329,7 +331,7 @@ tests/                      <tests>
 </screen>
 
 <screen name="설정 창">
-- **열기**: [설정] 위성 버튼으로 연다. 프로그램을 처음 켰을 때는 저절로 연다. 보통 창이고 제목은 `설정 — PPT 읽어주기`, 폭은 약 720px이다.
+- **열기**: [설정] 위성 버튼으로 연다. 프로그램을 처음 켰을 때는 저절로 연다. 보통 창이고 제목은 `설정 — 슬라이독`, 폭은 약 720px이다.
 - **바탕**: foam에서 흰색으로 흐르는 바탕이다.
 - **저장**:
   - 바꾸면 **바로 저장**하고 화면 아래에 `저장됨`을 1.2초 띄운다. 적용·취소 단추는 없다.
@@ -504,8 +506,9 @@ tests/                      <tests>
 
 <module name="ppt_reader/settings.py">
 - **폴더**: 운영체제 표준 앱 폴더다. `QStandardPaths`를 쓰지 않고 직접 정한다. Qt 없이 시험할 수 있게 하려는 것이다.
-  - Windows: `%APPDATA%\PPT읽어주기\`
-  - macOS: `~/Library/Application Support/PPT읽어주기/`
+  - Windows: `%APPDATA%\슬라이독\`
+  - macOS: `~/Library/Application Support/슬라이독/`
+  - 옛 이름 폴더(`PPT읽어주기`)가 있고 새 폴더가 없으면 처음 켤 때 이름을 바꿔 옮긴다. 옮기지 못하면(옛 판이 켜져 있는 등) 그때는 옛 폴더를 그대로 쓴다.
   - 시험에서는 환경 변수 `PPT_READER_HOME`으로 바꿀 수 있어야 한다.
 - **`settings.json`**(utf-8, `ensure_ascii=False`, indent 2):
   ```json
@@ -845,7 +848,7 @@ class Provider:
 | 알림 줄: 연동 끊김 | `PowerPoint 연결이 끊겼어요` |
 | 알림 줄: 음성 실패 | `목소리를 낼 수 없어요. 출력 장치를 확인하세요.` |
 | 알림 줄: 클라우드 음성 실패 `[보충]` | 키 문제 `{제공자} 키가 맞지 않아 운영체제 음성으로 읽어요.` / 요금·한도 `{제공자} 사용량 한도라 운영체제 음성으로 읽어요.` / 그 밖 `{제공자} 목소리를 쓸 수 없어 운영체제 음성으로 읽어요.` |
-| 설정 창 제목 | `설정 — PPT 읽어주기` |
+| 설정 창 제목 | `설정 — 슬라이독` |
 | 머리 | `발표 준비 {n} / 4` / `발표 준비 끝! 🎉` |
 | 카드 이름 | `발표 자료` / `목소리` / `질의응답` / `캐릭터와 화면`, 표시 `다음 할 일` |
 | 발표 자료 | `슬라이드 {N}장 · 노트 있는 장 {k}개 · 고친 대본 {m}장`, `다른 파일…`, `📝 대본 열기`, `파일 열기…`, `또는 PowerPoint에 자료를 열고 연동을 켜세요`, `PowerPoint 연동`, `읽을 내용` |
@@ -906,7 +909,7 @@ class Provider:
 2. 실제 PowerPoint 쇼 위에 강아지와 원 버튼이 보인다.
 3. 레티나 화면에서 크기와 위치가 맞는다.
 4. 대본 읽기, 질의응답, 말풍선이 된다.
-5. `--self-check` 결과(터미널에서 `PPTReader.app/Contents/MacOS/PPTReader --self-check`)를 보낸다.
+5. `--self-check` 결과(터미널에서 `Slidog.app/Contents/MacOS/Slidog --self-check`)를 보낸다.
 
 근거: 17, 19.
 </manual_checklists>
@@ -923,29 +926,32 @@ class Provider:
     2. `pip install -r requirements-dev.txt`
     3. `pytest -q tests`
     4. `pyinstaller ppt_reader.spec`
-    5. `dist/PPTReader/PPTReader.exe --self-check`
-    6. `licenses/`와 `handoff/windows.txt`를 넣어 `PPTReader-windows.zip`으로 묶어 올린다.
+    5. `dist/Slidog/Slidog.exe --self-check`
+    6. `licenses/`, `handoff/windows.txt`, 예제 자료(`sample/sample_presentation.pptx`를 "예제 발표 자료.pptx"로)를 넣어 `Slidog-windows.zip`으로 묶어 올린다.
   - 작업 `macos-15`(arm64. `macos-latest`는 가리키는 판이 바뀌므로 쓰지 않는다):
     1. Python 3.14와 pytest
     2. `pyinstaller ppt_reader.spec`
     3. `--self-check`
-    4. `codesign --verify --deep --strict dist/PPTReader.app`
+    4. `codesign --verify --deep --strict dist/Slidog.app`
     5. `lipo -archs`로 arm64만 담겼는지 확인
     6. 화면 시험: pyobjc로 만든 가짜 전체 화면 앱 위에 앱을 띄우고, cliclick으로 커서를 움직이며 `screencapture -x`로 찍어 산출물로 올린다.
-    7. 앱, `handoff/macos.txt`("먼저 읽어 주세요.txt"로), `licenses/`를 한 폴더에 담고 `ditto -c -k --keepParent`로 `PPTReader-macos-arm64.zip`을 묶어 `actions/upload-artifact@v7`에 `archive: false`로 올린다. 받는 사람에게 안내문이 함께 가야 해서 앱만 묶지 않는다.
+    7. 앱, `handoff/macos.txt`("먼저 읽어 주세요.txt"로), `licenses/`, 예제 자료("예제 발표 자료.pptx")를 한 폴더에 담고 `ditto -c -k --keepParent`로 `Slidog-macos-arm64.zip`을 묶어 `actions/upload-artifact@v7`에 `archive: false`로 올린다. 받는 사람에게 안내문이 함께 가야 해서 앱만 묶지 않는다.
 - **`ppt_reader.spec`**:
   - onedir를 유지한다. 그래야 Qt와 FFmpeg가 따로 된 라이브러리로 남아 바꿔 끼울 수 있다(LGPL).
   - `ppt_reader/assets/*.png`와 `licenses/`를 넣는다(설정 창의 "오픈 소스 라이선스" 링크가 연다).
   - PySide6-Addons에 딸려 오는 가상 키보드 플러그인(`qtvirtualkeyboardplugin`, Qt Quick/Qml 따라옴, 약 16MB)을 빼 본다. 빼도 질문창 입력과 소리가 되는지 `--self-check`와 사람 확인으로 본다.
+  - 이름: EXE와 COLLECT는 `Slidog`, BUNDLE은 `Slidog.app`, `bundle_identifier="local.slidog"`, `CFBundleDisplayName: "슬라이독"`.
   - macOS `info_plist`는 기존 세 키를 유지한다.
 - **`licenses/`**: Qt(LGPLv3), PySide6, FFmpeg(LGPL-2.1+), anthropic, openai, google-genai, python-pptx, Pillow, pywin32, pyobjc의 라이선스 원문을 넣는다.
 - **`handoff/windows.txt`**: 서명이 없어 처음 실행 때 "Windows의 PC 보호"가 뜨면 [추가 정보] → [실행]을 누르라는 안내다.
 - **`handoff/macos.txt`**:
   1. macOS 15 이상인지 확인(사과 메뉴 → 이 Mac에 관하여)
-  2. `PPTReader.app`을 응용 프로그램 폴더로 옮기기
+  2. `Slidog.app`을 응용 프로그램 폴더로 옮기기
   3. 열려고 한 뒤 시스템 설정 › 개인정보 보호 및 보안에서 [그래도 열기](약 1시간만 보임). macOS 15부터 Control-클릭 › 열기 우회는 없다.
   4. PowerPoint 제어 허용
   5. 새 판을 받을 때마다 위 과정을 반복하기(ad-hoc 서명이라 자동화 허용도 다시 묻는다)
+  - [그래도 열기]가 없거나 "손상됨"이 뜰 때: `xattr -dr com.apple.quarantine /Applications/Slidog.app`(내부 배포라 DTS 답변대로 허용, `docs/research/mac-without-mac.md`)
+  - 처음 써 보기: 설정 창 → [파일 열기…]로 예제 자료 → 원 버튼 [▶] → 질의응답은 키를 넣은 뒤
   6. 확인표(<manual_checklists>)
 - 근거: 13, 17, `docs/research/mac-without-mac.md`.
 </build_and_handoff>

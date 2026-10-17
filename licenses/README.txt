@@ -1,5 +1,5 @@
-PPT 읽어주기 — 오픈 소스 라이선스
-=====================================
+슬라이독 — 오픈 소스 라이선스
+=================================
 
 이 프로그램은 아래 오픈 소스 소프트웨어를 함께 묶어 배포합니다. 각 라이선스 원문은 이 폴더에 있습니다.
 
@@ -25,8 +25,8 @@ Qt와 FFmpeg(LGPL)에 대하여
 ---------------------------
 - 이 프로그램은 Qt, PySide6, FFmpeg를 고치지 않고 그대로 씁니다.
 - 실행 파일은 한 파일로 묶지 않고 폴더째 배포합니다(PyInstaller onedir). Qt와 FFmpeg는 그 폴더 안에 따로 된 라이브러리 파일로 들어 있습니다.
-  - Windows: PPTReader\_internal\PySide6 폴더의 Qt6*.dll, avcodec-*.dll 등
-  - macOS: PPTReader.app/Contents/Frameworks 안의 Qt와 FFmpeg 라이브러리
+  - Windows: Slidog\_internal\PySide6 폴더의 Qt6*.dll, avcodec-*.dll 등
+  - macOS: Slidog.app/Contents/Frameworks 안의 Qt와 FFmpeg 라이브러리
 - 사용자는 이 라이브러리들을 같은 판의 다른 빌드(직접 고쳐 빌드한 것 포함)로 바꿔 끼워 쓸 수 있습니다.
 - 소스 코드:
   - Qt: https://download.qt.io/official_releases/qt/6.11/

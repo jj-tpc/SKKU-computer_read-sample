@@ -1,7 +1,7 @@
 # PyInstaller 빌드 설정. 운영체제마다 그 운영체제에서 빌드한다(macOS판은 빌드 서버의 macos-15 러너).
 #   pip install -r requirements-dev.txt
 #   pyinstaller --noconfirm ppt_reader.spec
-# 결과: Windows -> dist/PPTReader/PPTReader.exe,  macOS -> dist/PPTReader.app
+# 결과: Windows -> dist/Slidog/Slidog.exe,  macOS -> dist/Slidog.app
 # onedir를 유지한다. Qt와 FFmpeg가 따로 된 라이브러리로 남아야 사용자가 바꿔 끼울 수 있다(LGPL).
 import sys
 
@@ -28,18 +28,18 @@ a.datas = [d for d in a.datas if _used(d)]
 
 pyz = PYZ(a.pure)
 # 아이콘은 tools/make_icon.py가 원 버튼 그림으로 만든다
-exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="PPTReader", console=False,
+exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="Slidog", console=False,
           icon="ppt_reader/assets/app.ico" if sys.platform == "win32" else None)
-coll = COLLECT(exe, a.binaries, a.datas, name="PPTReader")
+coll = COLLECT(exe, a.binaries, a.datas, name="Slidog")
 
 if sys.platform == "darwin":
     app = BUNDLE(
         coll,
-        name="PPTReader.app",
-        bundle_identifier="local.pptreader",
+        name="Slidog.app",
+        bundle_identifier="local.slidog",
         icon="ppt_reader/assets/app.icns",
         info_plist={
-            "CFBundleDisplayName": "PPT 읽어주기",
+            "CFBundleDisplayName": "슬라이독",
             "NSHighResolutionCapable": True,
             # PowerPoint 연동(AppleScript)을 쓰려면 이 문구가 있어야 macOS가 권한을 물어본다.
             "NSAppleEventsUsageDescription": "PowerPoint에서 지금 보이는 슬라이드를 알아내고 넘기기 위해 필요합니다.",

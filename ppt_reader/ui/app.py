@@ -28,7 +28,7 @@ from .icon import app_icon
 from .orb import OrbWindow, QuestionWindow, corner_center
 from .qtcore import MainThreadInvoker, QtClock
 
-APP_TITLE = "PPT 읽어주기"
+APP_TITLE = "슬라이독"
 FRAME_MS = 33  # 강아지와 원 버튼을 함께 그리는 타이머(약 30fps)
 HAPPY_SECONDS = 1.5
 GIVE_BACK_MS = (200, 700)  # 원 버튼을 누른 뒤 이 앱이 활성이 됐는지 보는 때(macOS). 빌드 서버에서 0.4초 안에 활성이 됐다

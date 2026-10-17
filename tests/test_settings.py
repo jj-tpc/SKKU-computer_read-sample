@@ -104,10 +104,42 @@ def test_folder_by_platform(monkeypatch, tmp_path):
     monkeypatch.delenv("PPT_READER_HOME")
     monkeypatch.setattr(settings_mod.sys, "platform", "win32")
     monkeypatch.setenv("APPDATA", str(tmp_path / "Roaming"))
-    assert app_folder() == tmp_path / "Roaming" / "PPT읽어주기"
+    assert app_folder() == tmp_path / "Roaming" / "슬라이독"
     monkeypatch.setattr(settings_mod.sys, "platform", "darwin")
     monkeypatch.setattr(settings_mod.Path, "home", lambda: tmp_path)
-    assert app_folder() == tmp_path / "Library" / "Application Support" / "PPT읽어주기"
+    assert app_folder() == tmp_path / "Library" / "Application Support" / "슬라이독"
+
+
+def test_old_name_folder_moves(monkeypatch, tmp_path):
+    monkeypatch.delenv("PPT_READER_HOME")
+    monkeypatch.setattr(settings_mod.sys, "platform", "win32")
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+    old, new = tmp_path / "PPT읽어주기", tmp_path / "슬라이독"
+    (old / "voice_cache").mkdir(parents=True)
+    (old / "settings.json").write_text('{"provider": "gemini"}', encoding="utf-8")
+    (old / "voice_cache" / "a.wav").write_bytes(b"RIFF")
+    assert app_folder() == new and not old.exists()
+    assert Settings()["provider"] == "gemini" and (new / "voice_cache" / "a.wav").read_bytes() == b"RIFF"
+    # 새 폴더가 이미 있으면 옛 폴더를 건드리지 않는다
+    old.mkdir()
+    (old / "settings.json").write_text('{"provider": "openai"}', encoding="utf-8")
+    assert app_folder() == new and Settings()["provider"] == "gemini" and old.exists()
+
+
+def test_old_name_folder_kept_when_move_fails(monkeypatch, tmp_path):
+    monkeypatch.delenv("PPT_READER_HOME")
+    monkeypatch.setattr(settings_mod.sys, "platform", "win32")
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+    old = tmp_path / "PPT읽어주기"
+    old.mkdir()
+    (old / "settings.json").write_text('{"provider": "gemini"}', encoding="utf-8")
+
+    def locked(self, target):
+        raise PermissionError("열려 있음")
+
+    monkeypatch.setattr(settings_mod.Path, "rename", locked)
+    assert app_folder() == old and Settings()["provider"] == "gemini"
+    assert not (tmp_path / "슬라이독").exists()
 
 
 def test_edits_store(app_home, tmp_path):

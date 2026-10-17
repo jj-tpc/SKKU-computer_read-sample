@@ -1,5 +1,5 @@
 #!/bin/bash
-# PPT 읽어주기 - macOS 실행 스크립트.  터미널에서:  bash run_mac.sh
+# 슬라이독 - macOS 실행 스크립트.  터미널에서:  bash run_mac.sh
 # 처음 실행할 때 .venv 를 만들고 필요한 패키지를 설치한다(인터넷 필요).
 cd "$(dirname "$0")" || exit 1
 

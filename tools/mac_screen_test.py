@@ -1,6 +1,6 @@
 """macOS 빌드 서버(GitHub Actions macos-15)용 화면 시험. Mac 없이 "전체 화면 쇼 위에 보이는가"를 본다.
 
-    python tools/mac_screen_test.py run dist/PPTReader.app shots
+    python tools/mac_screen_test.py run dist/Slidog.app shots
 
 1. pyobjc로 만든 가짜 쇼 앱을 자기 전체 화면 Space에 띄운다.
 2. 그 위에 빌드한 앱을 켜고, cliclick으로 커서를 옮기고 원 버튼을 누르며 screencapture로 찍는다.
@@ -120,7 +120,7 @@ def run(app_path: str, out_dir: str) -> int:
     show_front = frontmost()
     note(f"가짜 쇼 맨 앞 앱: {show_front}")
 
-    exe = Path(app_path) / "Contents" / "MacOS" / "PPTReader"
+    exe = Path(app_path) / "Contents" / "MacOS" / Path(app_path).stem
     home = Path(tempfile.mkdtemp(prefix="ppt_home_"))
     # 쇼 중에 쓰는 모습을 본다: 처음 켬 설정 창이 뜨지 않게 한다
     (home / "settings.json").write_text('{"first_run_done": true}', encoding="utf-8")
