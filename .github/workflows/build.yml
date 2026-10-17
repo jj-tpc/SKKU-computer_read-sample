@@ -68,7 +68,13 @@ jobs:
           brew install cliclick
           python tools/mac_screen_test.py run dist/PPTReader.app shots
       - name: 묶기
-        run: ditto -c -k --keepParent dist/PPTReader.app PPTReader-macos-arm64.zip
+        run: |
+          # 앱과 안내문, 라이선스를 한 폴더에 담아 ditto로 묶는다(그냥 zip하면 실행 권한과 링크가 깨져 "손상됨"이 뜬다)
+          mkdir -p pkg/PPTReader
+          ditto dist/PPTReader.app pkg/PPTReader/PPTReader.app
+          cp "handoff/macos.txt" "pkg/PPTReader/먼저 읽어 주세요.txt"
+          cp -R licenses pkg/PPTReader/licenses
+          ditto -c -k --keepParent pkg/PPTReader PPTReader-macos-arm64.zip
       - uses: actions/upload-artifact@v7
         with:
           path: PPTReader-macos-arm64.zip
