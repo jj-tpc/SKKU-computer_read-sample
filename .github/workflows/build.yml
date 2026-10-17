@@ -26,19 +26,20 @@ jobs:
         shell: pwsh
         run: |
           # 창 실행 파일이라 끝날 때까지 기다리며 출력을 파일로 받는다. 설정 폴더는 실제 앱 폴더를 쓰는지 본다.
-          $p = Start-Process -FilePath dist\PPTReader\PPTReader.exe -ArgumentList '--self-check' `
+          $p = Start-Process -FilePath dist\Slidog\Slidog.exe -ArgumentList '--self-check' `
                -Wait -PassThru -NoNewWindow -RedirectStandardOutput selfcheck.txt
           Get-Content selfcheck.txt -Encoding utf8
           if ($p.ExitCode -ne 0) { exit 1 }
       - name: 묶기
         shell: pwsh
         run: |
-          if (Test-Path licenses) { Copy-Item -Recurse licenses dist\PPTReader\licenses }
-          if (Test-Path handoff\windows.txt) { Copy-Item handoff\windows.txt "dist\PPTReader\먼저 읽어 주세요.txt" }
-          Compress-Archive -Path dist\PPTReader -DestinationPath PPTReader-windows.zip
+          if (Test-Path licenses) { Copy-Item -Recurse licenses dist\Slidog\licenses }
+          if (Test-Path handoff\windows.txt) { Copy-Item handoff\windows.txt "dist\Slidog\먼저 읽어 주세요.txt" }
+          Copy-Item sample\sample_presentation.pptx "dist\Slidog\예제 발표 자료.pptx"
+          Compress-Archive -Path dist\Slidog -DestinationPath Slidog-windows.zip
       - uses: actions/upload-artifact@v7
         with:
-          path: PPTReader-windows.zip
+          path: Slidog-windows.zip
           archive: false
 
   macos:
@@ -55,30 +56,31 @@ jobs:
       - name: 빌드
         run: pyinstaller --noconfirm ppt_reader.spec
       - name: --self-check
-        run: dist/PPTReader.app/Contents/MacOS/PPTReader --self-check
+        run: dist/Slidog.app/Contents/MacOS/Slidog --self-check
       - name: 서명과 아키텍처
         run: |
-          codesign --verify --deep --strict dist/PPTReader.app
-          codesign -dv dist/PPTReader.app 2>&1 | grep -E "Identifier|Format|Signature"
-          archs=$(lipo -archs dist/PPTReader.app/Contents/MacOS/PPTReader)
+          codesign --verify --deep --strict dist/Slidog.app
+          codesign -dv dist/Slidog.app 2>&1 | grep -E "Identifier|Format|Signature"
+          archs=$(lipo -archs dist/Slidog.app/Contents/MacOS/Slidog)
           echo "아키텍처: $archs"
           test "$archs" = "arm64"
       - name: 묶기
         run: |
           # 앱과 안내문, 라이선스를 한 폴더에 담아 ditto로 묶는다(그냥 zip하면 실행 권한과 링크가 깨져 "손상됨"이 뜬다)
-          mkdir -p pkg/PPTReader
-          ditto dist/PPTReader.app pkg/PPTReader/PPTReader.app
-          cp "handoff/macos.txt" "pkg/PPTReader/먼저 읽어 주세요.txt"
-          cp -R licenses pkg/PPTReader/licenses
-          ditto -c -k --keepParent pkg/PPTReader PPTReader-macos-arm64.zip
+          mkdir -p pkg/Slidog
+          ditto dist/Slidog.app pkg/Slidog/Slidog.app
+          cp "handoff/macos.txt" "pkg/Slidog/먼저 읽어 주세요.txt"
+          cp sample/sample_presentation.pptx "pkg/Slidog/예제 발표 자료.pptx"
+          cp -R licenses pkg/Slidog/licenses
+          ditto -c -k --keepParent pkg/Slidog Slidog-macos-arm64.zip
       - uses: actions/upload-artifact@v7
         with:
-          path: PPTReader-macos-arm64.zip
+          path: Slidog-macos-arm64.zip
           archive: false
       - name: 화면 시험(가짜 전체 화면 쇼 위)
         run: |
           brew install cliclick
-          python tools/mac_screen_test.py run dist/PPTReader.app shots
+          python tools/mac_screen_test.py run dist/Slidog.app shots
       - uses: actions/upload-artifact@v7
         if: always()
         with:
