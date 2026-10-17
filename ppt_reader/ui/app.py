@@ -49,6 +49,25 @@ def screen_for_native_rect(rect: tuple[int, int, int, int]) -> QScreen | None:
     return None
 
 
+TITLE_BAR = 40  # 창 제목 막대 몫(논리 px). 줄일 때 빼 둔다
+
+
+def fit_on_screen(window, first: bool) -> None:
+    """창이 화면 작업 영역보다 크면 줄인다(내용은 스크롤된다). 처음 열 때는 커서가 있는 화면 가운데에 둔다.
+
+    화면 배율 150%인 1080p 모니터는 작업 영역이 약 1280×688(논리 px)이라, 줄이지 않으면 설정 창 아래가 작업 표시줄에 걸린다.
+    """
+    screen = QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
+    if screen is None:
+        return
+    avail = screen.availableGeometry()
+    w = min(window.width(), avail.width() - 16)
+    h = min(window.height(), avail.height() - TITLE_BAR - 8)
+    window.resize(w, h)
+    if first:
+        window.move(avail.x() + (avail.width() - w) // 2, avail.y() + max(0, (avail.height() - h - TITLE_BAR) // 2))
+
+
 class Controller(QObject):
     """창들을 띄우고 session의 알림을 화면에 옮긴다."""
 
@@ -125,7 +144,8 @@ class Controller(QObject):
         if name == "follow":
             rect = platform_win.show_monitor_rect()
             found = screen_for_native_rect(rect) if rect else None
-            return found or (self._screen_now if self._screen_now in QGuiApplication.screens() else None)                 or QGuiApplication.primaryScreen()
+            return (found or (self._screen_now if self._screen_now in QGuiApplication.screens() else None)
+                    or QGuiApplication.primaryScreen())
         for screen in QGuiApplication.screens():
             if screen.name() == name:
                 return screen
@@ -274,10 +294,12 @@ class Controller(QObject):
     def open_settings(self, first_run: bool = False) -> None:
         from .settings_window import SettingsWindow
 
-        if self.settings_window is None:
+        created = self.settings_window is None
+        if created:
             self.settings_window = SettingsWindow(self)
         self.settings_window.refresh()
         self.settings_window.open_cards(first_run)
+        fit_on_screen(self.settings_window, created)
         self.settings_window.show()
         self.settings_window.raise_()
         self.settings_window.activateWindow()
@@ -287,10 +309,12 @@ class Controller(QObject):
 
         if self.session.deck is None:
             return
-        if self.script_window is None:
+        created = self.script_window is None
+        if created:
             self.script_window = ScriptWindow(self)
         else:
             self.script_window.rebuild()
+        fit_on_screen(self.script_window, created)
         self.script_window.show()
         self.script_window.raise_()
         self.script_window.activateWindow()

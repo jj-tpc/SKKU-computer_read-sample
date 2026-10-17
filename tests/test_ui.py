@@ -197,6 +197,18 @@ def test_first_run_opens_settings(qtbot, controller, app_home):
     assert w.hero_title.text() == "발표 준비 3 / 4" and w.cards[2].next_tag.isVisibleTo(w)
 
 
+def test_windows_fit_small_screen(qtbot, controller):
+    from PySide6.QtGui import QGuiApplication
+
+    from ppt_reader.ui.app import TITLE_BAR
+
+    avail = QGuiApplication.primaryScreen().availableGeometry()  # offscreen 화면은 800×600
+    controller.open_settings()
+    w = controller.settings_window
+    assert w.height() <= avail.height() - TITLE_BAR and w.width() <= avail.width()
+    assert avail.contains(w.frameGeometry().topLeft())
+
+
 def test_settings_save_at_once(qtbot, controller, app_home):
     w = controller.settings_window
     w.auto_toggle.click()
